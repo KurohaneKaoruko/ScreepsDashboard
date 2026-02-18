@@ -185,7 +185,7 @@ async function probeGroup(
         };
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "未知错误";
+      const message = error instanceof Error ? error.message : "Unknown error";
       probes.push({
         group,
         candidateId: candidate.id,
@@ -202,7 +202,7 @@ async function probeGroup(
     const summary = probes
       .map((probe) => `${probe.endpoint} => ${probe.status}${probe.error ? ` (${probe.error})` : ""}`)
       .join("; ");
-    throw new Error(`端点验证失败（${group}）: ${summary}`);
+    throw new Error(`Endpoint verification failed (${group}): ${summary}`);
   }
 
   return { probes };
@@ -216,10 +216,10 @@ export async function signInWithPassword(
   const cleanUsername = username.trim();
   const cleanPassword = password.trim();
   if (!cleanUsername || !cleanPassword) {
-    throw new Error("用户名和密码不能为空");
+    throw new Error("Username and password are required.");
   }
 
-  let lastError = "登录失败：无可用响应";
+  let lastError = "Sign-in failed: no valid response.";
 
   for (const candidate of SIGNIN_CANDIDATES) {
     try {
@@ -236,9 +236,9 @@ export async function signInWithPassword(
       }
 
       const reason = extractError(response.data) ?? `HTTP ${response.status}`;
-      lastError = `登录失败（${candidate.id}）: ${reason}`;
+      lastError = `Sign-in failed (${candidate.id}): ${reason}`;
     } catch (error) {
-      lastError = error instanceof Error ? error.message : "登录请求异常";
+      lastError = error instanceof Error ? error.message : "Sign-in request failed.";
     }
   }
 
@@ -252,7 +252,7 @@ export async function probeSupportedEndpoints(baseUrl: string, token: string): P
 
   const profileEndpoint = profile.selected;
   if (!profileEndpoint) {
-    throw new Error("缺少可用的 profile 端点");
+    throw new Error("No available profile endpoint.");
   }
 
   return {

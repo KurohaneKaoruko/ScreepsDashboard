@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { type FormEvent, useState } from "react";
+import { useI18n } from "../lib/i18n/use-i18n";
 import {
   extractUsername,
   probeSupportedEndpoints,
@@ -13,14 +15,8 @@ type AuthMode = "password" | "token";
 
 const OFFICIAL_SERVER_URL = "https://screeps.com";
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "Unknown error";
-}
-
 export function LoginPanel() {
+  const { t } = useI18n();
   const setSession = useAuthStore((state) => state.setSession);
 
   const [serverUrl, setServerUrl] = useState(OFFICIAL_SERVER_URL);
@@ -39,21 +35,24 @@ export function LoginPanel() {
     try {
       const baseUrl = normalizeBaseUrl(serverUrl);
       const normalizedUsername = username.trim();
+      let resolvedToken = "";
 
-      const resolvedToken =
-        authMode === "password"
-          ? await signInWithPassword(baseUrl, normalizedUsername, password)
-          : token.trim();
+      if (authMode === "password") {
+        if (!normalizedUsername || !password.trim()) {
+          throw new Error(t("login.accountRequired"));
+        }
+        resolvedToken = await signInWithPassword(baseUrl, normalizedUsername, password);
+      } else {
+        resolvedToken = token.trim();
+      }
 
       if (!resolvedToken) {
-        throw new Error("Token cannot be empty.");
+        throw new Error(t("login.tokenEmpty"));
       }
 
       const probeSummary = await probeSupportedEndpoints(baseUrl, resolvedToken);
-      const displayName = extractUsername(
-        probeSummary.profileSample,
-        normalizedUsername || "Commander"
-      );
+      const fallbackName = authMode === "password" ? normalizedUsername : t("app.guestLabel");
+      const displayName = extractUsername(probeSummary.profileSample, fallbackName);
 
       setSession({
         baseUrl,
@@ -66,7 +65,7 @@ export function LoginPanel() {
       setPassword("");
       setToken("");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setErrorMessage(error instanceof Error ? error.message : t("common.unknownError"));
     } finally {
       setIsSubmitting(false);
     }
@@ -74,18 +73,16 @@ export function LoginPanel() {
 
   return (
     <section className="panel login-panel">
-      <h1 className="page-title">Screeps Dashboard</h1>
-      <p className="page-subtitle">
-        Sign in with your official server or private server account.
-      </p>
+      <h1 className="page-title">{t("login.title")}</h1>
+      <p className="page-subtitle">{t("login.subtitle")}</p>
 
       <form className="form-grid" onSubmit={handleSubmit}>
         <label className="field">
-          <span>Server URL</span>
+          <span>{t("login.serverUrl")}</span>
           <input
             value={serverUrl}
             onChange={(event) => setServerUrl(event.currentTarget.value)}
-            placeholder="https://screeps.com or https://your-private-server"
+            placeholder={t("login.serverUrlPlaceholder")}
             autoComplete="url"
             required
           />
@@ -97,71 +94,71 @@ export function LoginPanel() {
             className={authMode === "password" ? "chip active" : "chip"}
             onClick={() => setAuthMode("password")}
           >
-            Password Sign-in
+            {t("login.modePassword")}
           </button>
           <button
             type="button"
             className={authMode === "token" ? "chip active" : "chip"}
             onClick={() => setAuthMode("token")}
           >
-            Token Sign-in
+            {t("login.modeToken")}
           </button>
         </div>
 
-        <label className="field">
-          <span>
-            {authMode === "password"
-              ? "Account (email/username)"
-              : "Display name (optional)"}
-          </span>
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.currentTarget.value)}
-            placeholder={
-              authMode === "password"
-                ? "Enter your account"
-                : "Used for local display only"
-            }
-            autoComplete="username"
-          />
-        </label>
-
         {authMode === "password" ? (
-          <label className="field">
-            <span>Password</span>
-            <input
-              value={password}
-              onChange={(event) => setPassword(event.currentTarget.value)}
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </label>
+          <>
+            <label className="field">
+              <span>{t("login.accountLabel")}</span>
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.currentTarget.value)}
+                placeholder={t("login.accountPlaceholder")}
+                autoComplete="username"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>{t("login.passwordLabel")}</span>
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.currentTarget.value)}
+                type="password"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+          </>
         ) : (
-          <label className="field">
-            <span>Token</span>
-            <input
-              value={token}
-              onChange={(event) => setToken(event.currentTarget.value)}
-              type="password"
-              autoComplete="off"
-              required
-            />
-          </label>
+          <>
+            <label className="field">
+              <span>{t("login.tokenLabel")}</span>
+              <input
+                value={token}
+                onChange={(event) => setToken(event.currentTarget.value)}
+                type="password"
+                autoComplete="off"
+                required
+              />
+            </label>
+            <p className="hint-text">{t("login.tokenHint")}</p>
+          </>
         )}
 
         {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
 
         <button className="primary-button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Signing in and probing endpoints..." : "Open dashboard"}
+          {isSubmitting ? t("login.submitting") : t("login.submit")}
         </button>
       </form>
 
       <div className="hint-block">
-        <p>
-          The first sign-in probes available API endpoints and caches results
-          for future refresh calls.
-        </p>
+        <p>{t("login.hint")}</p>
+      </div>
+
+      <div className="inline-actions">
+        <Link className="ghost-button" href="/rooms">
+          {t("login.guestAction")}
+        </Link>
       </div>
     </section>
   );

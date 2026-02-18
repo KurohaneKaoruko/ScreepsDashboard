@@ -1,15 +1,12 @@
 import { AppShell } from "../../components/app-shell";
 import { AuthGuard } from "../../components/auth-guard";
-import { PlaceholderPage } from "../../components/placeholder-page";
+import { SettingsPanel } from "../../components/settings-panel";
 
 export default function SettingsPage() {
   return (
     <AuthGuard>
       <AppShell>
-        <PlaceholderPage
-          title="Settings"
-          description="Configuration and account preferences will be added here."
-        />
+        <SettingsPanel />
       </AppShell>
     </AuthGuard>
   );

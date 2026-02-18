@@ -211,7 +211,7 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
   ]);
 
   if (!profileResponse.ok) {
-    throw new Error(`用户数据请求失败: ${getResponseError(profileResponse)}`);
+    throw new Error(`Failed to fetch user data: ${getResponseError(profileResponse)}`);
   }
 
   const safeRoomsPayload = roomsResponse?.ok ? roomsResponse.data : undefined;

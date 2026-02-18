@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
+import type { TranslationKey } from "../lib/i18n/dict";
+import { useI18n } from "../lib/i18n/use-i18n";
 import { fetchDashboardSnapshot } from "../lib/screeps/dashboard";
 import { probeSupportedEndpoints } from "../lib/screeps/endpoints";
 import { useAuthStore } from "../stores/auth-store";
 import {
-  refreshIntervalOptions,
+  refreshIntervalValues,
   useSettingsStore,
 } from "../stores/settings-store";
 
@@ -24,17 +26,6 @@ function formatPercent(value: number | undefined): string {
   return `${value.toFixed(2)}%`;
 }
 
-function formatTime(value: string | undefined): string {
-  if (!value) {
-    return "--";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
-}
-
 function errorToMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -42,7 +33,21 @@ function errorToMessage(error: unknown): string {
   return "Unknown error";
 }
 
+function refreshLabelKey(value: number): TranslationKey {
+  if (value === 30_000) {
+    return "refresh.30s";
+  }
+  if (value === 60_000) {
+    return "refresh.60s";
+  }
+  if (value === 120_000) {
+    return "refresh.120s";
+  }
+  return "refresh.300s";
+}
+
 export function DashboardPanel() {
+  const { t, locale } = useI18n();
   const session = useAuthStore((state) => state.session);
   const setSession = useAuthStore((state) => state.setSession);
   const refreshIntervalMs = useSettingsStore((state) => state.refreshIntervalMs);
@@ -52,6 +57,15 @@ export function DashboardPanel() {
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isReprobing, setIsReprobing] = useState(false);
+
+  const refreshOptions = useMemo(
+    () =>
+      refreshIntervalValues.map((value) => ({
+        value,
+        label: t(refreshLabelKey(value)),
+      })),
+    [t]
+  );
 
   if (!session) {
     return null;
@@ -67,6 +81,17 @@ export function DashboardPanel() {
       revalidateOnReconnect: false,
     }
   );
+
+  function formatTime(value: string | undefined): string {
+    if (!value) {
+      return t("common.notAvailable");
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString(locale);
+  }
 
   async function handleReprobe() {
     if (!session) {
@@ -100,19 +125,22 @@ export function DashboardPanel() {
     <section className="panel dashboard-panel">
       <header className="dashboard-header">
         <div>
-          <h1 className="page-title">User Data</h1>
+          <h1 className="page-title">{t("dashboard.title")}</h1>
           <p className="page-subtitle">
-            {session.username} at {session.baseUrl}
+            {t("dashboard.subtitle", {
+              username: session.username,
+              baseUrl: session.baseUrl,
+            })}
           </p>
         </div>
         <div className="header-actions">
           <label className="refresh-select">
-            <span>Refresh interval</span>
+            <span>{t("dashboard.refreshInterval")}</span>
             <select
               value={refreshIntervalMs}
               onChange={(event) => setRefreshIntervalMs(Number(event.currentTarget.value))}
             >
-              {refreshIntervalOptions.map((option) => (
+              {refreshOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -121,99 +149,102 @@ export function DashboardPanel() {
           </label>
 
           <button className="secondary-button" onClick={() => void mutate()}>
-            Refresh now
+            {t("common.refreshNow")}
           </button>
           <button
             className="secondary-button"
             onClick={() => void handleReprobe()}
             disabled={isReprobing}
           >
-            {isReprobing ? "Probing..." : "Re-probe endpoints"}
+            {isReprobing ? t("dashboard.probing") : t("dashboard.reprobe")}
           </button>
         </div>
       </header>
 
       <div className="status-strip">
-        <span>Endpoint check: {formatTime(session.verifiedAt)}</span>
-        <span>Last fetch: {formatTime(data?.fetchedAt)}</span>
-        <span>{isValidating ? "Syncing..." : "Idle"}</span>
+        <span>
+          {t("dashboard.endpointCheck")}: {formatTime(session.verifiedAt)}
+        </span>
+        <span>
+          {t("dashboard.lastFetch")}: {formatTime(data?.fetchedAt)}
+        </span>
+        <span>{isValidating ? t("common.syncing") : t("common.idle")}</span>
       </div>
 
       {actionError ? <p className="error-text">{actionError}</p> : null}
       {error ? <p className="error-text">{errorToMessage(error)}</p> : null}
-      {isLoading ? <p className="hint-text">Loading game data...</p> : null}
+      {isLoading ? <p className="hint-text">{t("dashboard.loading")}</p> : null}
 
       <div className="card-grid">
         <article className="card">
-          <h2>Resource Summary</h2>
+          <h2>{t("dashboard.resourceSummary")}</h2>
           <div className="metric-grid">
             <div>
-              <span>Credits</span>
+              <span>{t("dashboard.credits")}</span>
               <strong>{formatNumber(data?.resources.credits)}</strong>
             </div>
             <div>
-              <span>CPU Limit</span>
+              <span>{t("dashboard.cpuLimit")}</span>
               <strong>{formatNumber(data?.resources.cpuLimit)}</strong>
             </div>
             <div>
-              <span>CPU Used</span>
+              <span>{t("dashboard.cpuUsed")}</span>
               <strong>{formatNumber(data?.resources.cpuUsed)}</strong>
             </div>
             <div>
-              <span>CPU Bucket</span>
+              <span>{t("dashboard.cpuBucket")}</span>
               <strong>{formatNumber(data?.resources.cpuBucket)}</strong>
             </div>
             <div>
-              <span>GCL Level</span>
+              <span>{t("dashboard.gclLevel")}</span>
               <strong>{formatNumber(data?.resources.gclLevel)}</strong>
             </div>
             <div>
-              <span>GCL Progress</span>
+              <span>{t("dashboard.gclProgress")}</span>
               <strong>{formatPercent(data?.resources.gclProgressPercent)}</strong>
             </div>
           </div>
         </article>
 
         <article className="card">
-          <h2>Rooms</h2>
+          <h2>{t("dashboard.rooms")}</h2>
           {data?.rooms.length ? (
             <div className="room-table">
               <div className="room-head">
-                <span>Room</span>
-                <span>Owner</span>
-                <span>RCL</span>
-                <span>Energy</span>
+                <span>{t("dashboard.room")}</span>
+                <span>{t("dashboard.owner")}</span>
+                <span>{t("dashboard.rcl")}</span>
+                <span>{t("dashboard.energy")}</span>
               </div>
               {data.rooms.map((room) => (
                 <div className="room-row" key={room.name}>
                   <span>{room.name}</span>
-                  <span>{room.owner ?? "--"}</span>
-                  <span>{room.level ?? "--"}</span>
+                  <span>{room.owner ?? t("common.notAvailable")}</span>
+                  <span>{room.level ?? t("common.notAvailable")}</span>
                   <span>
-                    {room.energyAvailable ?? "--"} / {room.energyCapacity ?? "--"}
+                    {room.energyAvailable ?? t("common.notAvailable")} /{" "}
+                    {room.energyCapacity ?? t("common.notAvailable")}
                   </span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="hint-text">
-              No room payload could be parsed. Check endpoint or permissions.
-            </p>
+            <p className="hint-text">{t("dashboard.noRooms")}</p>
           )}
         </article>
       </div>
 
       <div className="card-grid">
         <article className="card">
-          <h2>Endpoint Probes</h2>
+          <h2>{t("dashboard.endpointProbes")}</h2>
           <div className="probe-list">
             {session.probes.map((probe) => (
               <div key={`${probe.group}-${probe.candidateId}`} className="probe-row">
                 <span>{probe.group}</span>
                 <span>{probe.endpoint}</span>
-                <span>{probe.status || "--"}</span>
+                <span>{probe.status || t("common.notAvailable")}</span>
                 <span className={probe.ok ? "ok-text" : "error-text-inline"}>
-                  {probe.ok ? "Available" : probe.error ?? "Failed"}
+                  {probe.ok ? t("dashboard.available") : probe.error ?? t("dashboard.failed")}
                 </span>
               </div>
             ))}
@@ -221,7 +252,7 @@ export function DashboardPanel() {
         </article>
 
         <article className="card">
-          <h2>Raw Payloads (Debug)</h2>
+          <h2>{t("dashboard.rawPayloads")}</h2>
           <pre className="raw-json">
             {JSON.stringify(
               {

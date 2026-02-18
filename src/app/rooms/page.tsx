@@ -1,16 +1,10 @@
 import { AppShell } from "../../components/app-shell";
-import { AuthGuard } from "../../components/auth-guard";
-import { PlaceholderPage } from "../../components/placeholder-page";
+import { PublicRoomsPanel } from "../../components/public-rooms-panel";
 
 export default function RoomsPage() {
   return (
-    <AuthGuard>
-      <AppShell>
-        <PlaceholderPage
-          title="Rooms"
-          description="Room operation view is planned for the next iteration."
-        />
-      </AppShell>
-    </AuthGuard>
+    <AppShell>
+      <PublicRoomsPanel />
+    </AppShell>
   );
 }

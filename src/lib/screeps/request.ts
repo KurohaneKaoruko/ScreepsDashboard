@@ -20,7 +20,7 @@ export function normalizeBaseUrl(rawInput: string): string {
     url.pathname = url.pathname.replace(/\/+$/, "") || "/";
     return url.toString().replace(/\/$/, "");
   } catch {
-    throw new Error(`服务器地址无效: ${rawInput}`);
+    throw new Error(`Invalid server URL: ${rawInput}`);
   }
 }
 
@@ -38,7 +38,7 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
-  return "未知错误";
+  return "Unknown error";
 }
 
 async function browserFallbackRequest(request: ScreepsRequest): Promise<ScreepsResponse> {
@@ -83,7 +83,7 @@ async function browserFallbackRequest(request: ScreepsRequest): Promise<ScreepsR
       url: response.url,
     };
   } catch (error) {
-    throw new Error(`浏览器直连请求失败: ${getErrorMessage(error)}`);
+    throw new Error(`Browser fallback request failed: ${getErrorMessage(error)}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -91,7 +91,7 @@ async function browserFallbackRequest(request: ScreepsRequest): Promise<ScreepsR
 
 export async function screepsRequest(request: ScreepsRequest): Promise<ScreepsResponse> {
   if (typeof window === "undefined") {
-    throw new Error("Screeps 请求仅支持在浏览器/Tauri 上下文执行");
+    throw new Error("Screeps request is only supported in browser/Tauri context.");
   }
 
   const normalizedRequest: ScreepsRequest = {

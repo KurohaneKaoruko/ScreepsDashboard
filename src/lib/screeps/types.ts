@@ -89,3 +89,41 @@ export interface DashboardSnapshot {
     stats?: number;
   };
 }
+
+export interface PublicLeaderboardEntry {
+  username: string;
+  rank?: number;
+  score?: number;
+}
+
+export interface PublicLeaderboardSummary {
+  source: string;
+  season?: string;
+  entries: PublicLeaderboardEntry[];
+}
+
+export interface PublicRoomStat {
+  room: string;
+  owner?: string;
+  level?: number;
+  novice?: boolean;
+  respawnArea?: boolean;
+}
+
+export interface PublicMapSummary {
+  terrainRoom: string;
+  terrainAvailable: boolean;
+  encodedTerrain?: string;
+  roomStats: PublicRoomStat[];
+  sources: string[];
+}
+
+export interface PublicSnapshot {
+  fetchedAt: string;
+  baseUrl: string;
+  leaderboard?: PublicLeaderboardSummary;
+  map?: PublicMapSummary;
+  statuses: Record<string, number>;
+  errors: string[];
+  raw: Record<string, unknown>;
+}

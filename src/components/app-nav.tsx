@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useI18n } from "../lib/i18n/use-i18n";
+import { useAuthStore } from "../stores/auth-store";
 
 interface NavItem {
   href: string;
@@ -9,39 +11,53 @@ interface NavItem {
   description: string;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  {
-    href: "/user",
-    label: "User Data",
-    description: "Main data dashboard and endpoint probes.",
-  },
-  {
-    href: "/rooms",
-    label: "Rooms",
-    description: "Room-level management page placeholder.",
-  },
-  {
-    href: "/settings",
-    label: "Settings",
-    description: "App settings placeholder.",
-  },
-  {
-    href: "/logs",
-    label: "Logs",
-    description: "System and operation logs placeholder.",
-  },
-];
-
 function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function AppNav() {
   const pathname = usePathname();
+  const session = useAuthStore((state) => state.session);
+  const { t } = useI18n();
+  const navItems: NavItem[] = session
+    ? [
+        {
+          href: "/user",
+          label: t("nav.userLabel"),
+          description: t("nav.userDesc"),
+        },
+        {
+          href: "/rooms",
+          label: t("nav.roomsLabel"),
+          description: t("nav.roomsDesc"),
+        },
+        {
+          href: "/settings",
+          label: t("nav.settingsLabel"),
+          description: t("nav.settingsDesc"),
+        },
+        {
+          href: "/logs",
+          label: t("nav.logsLabel"),
+          description: t("nav.logsDesc"),
+        },
+      ]
+    : [
+        {
+          href: "/rooms",
+          label: t("nav.roomsLabel"),
+          description: t("nav.roomsDesc"),
+        },
+        {
+          href: "/login",
+          label: t("nav.loginLabel"),
+          description: t("nav.loginDesc"),
+        },
+      ];
 
   return (
-    <nav className="app-nav" aria-label="Main navigation">
-      {NAV_ITEMS.map((item) => {
+    <nav className="app-nav" aria-label={t("nav.aria")}>
+      {navItems.map((item) => {
         const active = isActivePath(pathname, item.href);
 
         return (

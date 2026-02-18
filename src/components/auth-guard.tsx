@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useI18n } from "../lib/i18n/use-i18n";
 import { useAuthStore } from "../stores/auth-store";
 
 interface AuthGuardProps {
@@ -29,6 +30,7 @@ export function useAuthHydration(): boolean {
 export function AuthGuard({ children, redirectTo = "/login" }: AuthGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const { t } = useI18n();
   const session = useAuthStore((state) => state.session);
   const hasHydrated = useAuthHydration();
 
@@ -45,7 +47,7 @@ export function AuthGuard({ children, redirectTo = "/login" }: AuthGuardProps) {
   if (!hasHydrated) {
     return (
       <main className="auth-loading">
-        <p className="hint-text">Loading session...</p>
+        <p className="hint-text">{t("auth.loading")}</p>
       </main>
     );
   }
@@ -53,7 +55,7 @@ export function AuthGuard({ children, redirectTo = "/login" }: AuthGuardProps) {
   if (!session) {
     return (
       <main className="auth-loading">
-        <p className="hint-text">Redirecting to login...</p>
+        <p className="hint-text">{t("auth.redirectingToLogin")}</p>
       </main>
     );
   }
