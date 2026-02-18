@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Screeps Dashboard - A desktop app for monitoring your Screeps game"
 authors = ["you"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "screeps_dashboard_lib"
