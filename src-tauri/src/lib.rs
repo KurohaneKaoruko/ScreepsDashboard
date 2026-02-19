@@ -11,6 +11,7 @@ struct ScreepsRequest {
     endpoint: String,
     method: Option<String>,
     token: Option<String>,
+    username: Option<String>,
     query: Option<HashMap<String, String>>,
     body: Option<Value>,
 }
@@ -72,10 +73,16 @@ async fn screeps_request(request: ScreepsRequest) -> Result<ScreepsResponse, Str
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        req = req
-            .header("X-Token", token)
-            .header("X-Username", token)
-            .header("Authorization", format!("Bearer {}", token));
+        req = req.header("X-Token", token);
+    }
+
+    if let Some(username) = request
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        req = req.header("X-Username", username);
     }
 
     if method != Method::GET {

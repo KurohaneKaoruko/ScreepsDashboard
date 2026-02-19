@@ -22,7 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-dev-docs
 dist
 out
 .*/
+!.github/
