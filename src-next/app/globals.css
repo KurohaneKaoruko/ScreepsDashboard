@@ -904,7 +904,7 @@ a {
 .profile-top-rings {
   margin-left: auto;
   min-width: 0;
-  width: min(100%, 192px);
+  width: min(100%, 236px);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -1002,7 +1002,7 @@ a {
 }
 
 .progress-ring-grid-system {
-  width: min(100%, 330px);
+  width: min(100%, 360px);
   margin-left: auto;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   justify-items: end;
@@ -1095,7 +1095,7 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-.circle-progress-center strong {
+.circle-progress-primary {
   max-width: 92%;
   margin: 0 auto;
   white-space: nowrap;
@@ -1103,6 +1103,20 @@ a {
   font-size: var(--ring-primary-size, 16px);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.circle-progress-primary-small-percent {
+  align-items: flex-end;
+}
+
+.circle-progress-percent-symbol {
+  font-size: 0.58em;
+  line-height: 1;
+  transform: translateY(0.16em);
 }
 
 .circle-progress-sub {
@@ -1680,7 +1694,7 @@ a {
   }
 
   .profile-top-rings {
-    width: min(100%, 176px);
+    width: min(100%, 220px);
     gap: 6px;
   }
 
@@ -1709,7 +1723,7 @@ a {
   }
 
   .progress-ring-grid-system {
-    width: min(100%, 306px);
+    width: min(100%, 330px);
   }
 
   .metric-cluster,

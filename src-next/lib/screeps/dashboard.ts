@@ -82,7 +82,9 @@ const ROOMS_FALLBACK_ENDPOINTS: DashboardFallbackEndpoint[] = [
   },
 ];
 
-const DEFAULT_MEMORY_LIMIT_MB = 2;
+const DEFAULT_MEMORY_LIMIT_KB = 2_048;
+const MEMORY_MB_UPPER_BOUND = 16;
+const MEMORY_BYTES_LOWER_BOUND = 16_384;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -389,6 +391,32 @@ function toPercent(used: number | undefined, limit: number | undefined): number 
   return (used / limit) * 100;
 }
 
+function normalizeMemoryValueToKB(value: number | undefined): number | undefined {
+  if (value === undefined || value <= 0) {
+    return value;
+  }
+
+  if (value > MEMORY_BYTES_LOWER_BOUND) {
+    return value / 1024;
+  }
+
+  if (value <= MEMORY_MB_UPPER_BOUND) {
+    return value * 1024;
+  }
+
+  return value;
+}
+
+function normalizeMemoryToKB(
+  used: number | undefined,
+  limit: number | undefined
+): { used?: number; limit?: number } {
+  return {
+    used: normalizeMemoryValueToKB(used),
+    limit: normalizeMemoryValueToKB(limit),
+  };
+}
+
 function pickAvatarUrl(baseUrl: string, username: string, payload: unknown): string | undefined {
   const root = pickPayloadRecord(payload, PROFILE_SIGNAL_KEYS);
   const user = asRecord(root.user) ?? root;
@@ -576,6 +604,16 @@ function extractProfile(
       user._id,
       root._id,
     ]) ?? session.username;
+  const userId = firstString([
+    user._id,
+    root._id,
+    statsUser._id,
+    stats._id,
+    user.id,
+    root.id,
+    statsUser.id,
+    stats.id,
+  ]);
 
   const cpuScalar = firstNumber([user.cpu, root.cpu, statsUser.cpu, stats.cpu]);
   const gclTotalPoints = firstNumber([
@@ -780,7 +818,7 @@ function extractProfile(
     stats.powerRatio,
   ]);
 
-  const memUsed = firstNumber([
+  const rawMemUsed = firstNumber([
     mem.used,
     mem.current,
     user.memUsed,
@@ -797,7 +835,7 @@ function extractProfile(
     runtime.memoryUsed,
     runtime.memory,
   ]);
-  const memLimit = firstNumber([
+  const rawMemLimit = firstNumber([
     mem.limit,
     mem.max,
     user.memLimit,
@@ -813,6 +851,9 @@ function extractProfile(
     runtime.memLimit,
     runtime.memoryLimit,
   ]);
+  const normalizedMemory = normalizeMemoryToKB(rawMemUsed, rawMemLimit);
+  const memUsed = normalizedMemory.used;
+  const memLimit = normalizedMemory.limit;
   const memPercent = normalizePercent(
     firstNumber([
       mem.percent,
@@ -860,6 +901,7 @@ function extractProfile(
   );
   return {
     avatarUrl: pickAvatarUrl(session.baseUrl, username, profilePayload),
+    userId,
     username,
     gclLevel: resolvedGclLevel,
     gclProgress: resolvedGclProgress,
@@ -1316,7 +1358,7 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
     profile.cpuBucket = 0;
   }
   if (profile.memLimit === undefined) {
-    profile.memLimit = profile.cpuLimit ?? DEFAULT_MEMORY_LIMIT_MB;
+    profile.memLimit = DEFAULT_MEMORY_LIMIT_KB;
   }
   if (profile.memUsed === undefined && profile.memLimit !== undefined) {
     profile.memUsed = 0;

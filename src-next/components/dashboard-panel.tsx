@@ -43,6 +43,13 @@ function formatRatio(used: number | undefined, total: number | undefined): strin
   return `${formatNumber(used)}/${formatNumber(total)}`;
 }
 
+function formatMemoryRatio(used: number | undefined, total: number | undefined): string {
+  if (used === undefined || total === undefined) {
+    return "--/-- KB";
+  }
+  return `${formatNumber(used)}/${formatNumber(total)} KB`;
+}
+
 function errorToMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -103,6 +110,55 @@ function buildAvatarCandidates(
   return [...unique];
 }
 
+function buildRuntimeChannels(
+  sessionUsername: string,
+  profileUsername?: string,
+  profileUserId?: string
+): string[] {
+  const channels = new Set<string>([
+    "cpu",
+    "memory",
+    "stats",
+    "cpubucket",
+    "bucket",
+    "user/cpu",
+    "user/memory",
+    "user/cpubucket",
+    "user/bucket",
+    "user/stats",
+  ]);
+
+  const identityCandidates = new Set<string>();
+  const cleanedSessionUsername = sessionUsername.trim();
+  const cleanedProfileUsername = profileUsername?.trim();
+  const cleanedProfileUserId = profileUserId?.trim();
+
+  if (cleanedSessionUsername) {
+    identityCandidates.add(cleanedSessionUsername);
+  }
+  if (cleanedProfileUsername) {
+    identityCandidates.add(cleanedProfileUsername);
+  }
+  if (cleanedProfileUserId) {
+    identityCandidates.add(cleanedProfileUserId);
+  }
+
+  for (const identity of identityCandidates) {
+    channels.add(`user:${identity}/cpu`);
+    channels.add(`user:${identity}/memory`);
+    channels.add(`user:${identity}/cpubucket`);
+    channels.add(`user:${identity}/bucket`);
+    channels.add(`user:${identity}/stats`);
+    channels.add(`user/${identity}/cpu`);
+    channels.add(`user/${identity}/memory`);
+    channels.add(`user/${identity}/cpubucket`);
+    channels.add(`user/${identity}/bucket`);
+    channels.add(`user/${identity}/stats`);
+  }
+
+  return [...channels];
+}
+
 export function DashboardPanel() {
   const { t } = useI18n();
   const session = useAuthStore((state) => state.session);
@@ -111,7 +167,7 @@ export function DashboardPanel() {
   const [roomSortDesc, setRoomSortDesc] = useState(true);
   const [roomFilterKeyword, setRoomFilterKeyword] = useState("");
   const [avatarCandidateIndex, setAvatarCandidateIndex] = useState(0);
-  const [ringSize, setRingSize] = useState(104);
+  const [ringSize, setRingSize] = useState(114);
   const [runtimeMetrics, setRuntimeMetrics] = useState<RuntimeMetricsPatch>({});
 
   if (!session) {
@@ -152,6 +208,10 @@ export function DashboardPanel() {
     [profile?.avatarUrl, profile?.username, session.baseUrl, session.username]
   );
   const avatarSrc = avatarCandidates[avatarCandidateIndex];
+  const realtimeChannels = useMemo(
+    () => buildRuntimeChannels(session.username, profile?.username, profile?.userId),
+    [profile?.userId, profile?.username, session.username]
+  );
   const roomThumbnails = data?.roomThumbnails ?? [];
   const ringColors = {
     gcl: "#4cc4cb",
@@ -160,7 +220,6 @@ export function DashboardPanel() {
     mem: "#8f88ff",
     bkt: "#e6bd5b",
   } as const;
-  const topRingSize = Math.max(70, ringSize - 12);
 
   const filteredRooms = useMemo(() => {
     const normalizedKeyword = roomFilterKeyword.trim().toLowerCase();
@@ -237,38 +296,36 @@ export function DashboardPanel() {
       }));
     };
 
-    const unsubscribeCpu = realtimeClient.subscribe("cpu", handleRuntime);
-    const unsubscribeMemoryStats = realtimeClient.subscribe("memory/stats", handleRuntime);
-    const unsubscribeMemory = realtimeClient.subscribe("memory", handleRuntime);
-    const unsubscribeStats = realtimeClient.subscribe("stats", handleRuntime);
+    const unsubs = realtimeChannels.map((channel) =>
+      realtimeClient.subscribe(channel, handleRuntime)
+    );
 
     realtimeClient.connect();
 
     return () => {
-      unsubscribeCpu();
-      unsubscribeMemoryStats();
-      unsubscribeMemory();
-      unsubscribeStats();
+      for (const unsubscribe of unsubs) {
+        unsubscribe();
+      }
       realtimeClient.disconnect();
     };
-  }, [session.baseUrl, session.token]);
+  }, [realtimeChannels, session.baseUrl, session.token]);
 
   useEffect(() => {
     function syncRingSize() {
       const viewportWidth = window.innerWidth;
       if (viewportWidth <= 380) {
-        setRingSize(80);
+        setRingSize(86);
         return;
       }
       if (viewportWidth <= 520) {
-        setRingSize(88);
-        return;
-      }
-      if (viewportWidth <= 900) {
         setRingSize(96);
         return;
       }
-      setRingSize(104);
+      if (viewportWidth <= 900) {
+        setRingSize(106);
+        return;
+      }
+      setRingSize(114);
     }
 
     syncRingSize();
@@ -323,14 +380,14 @@ export function DashboardPanel() {
                     level={profile?.gclLevel}
                     percent={profile?.gclProgressPercent}
                     ringColor={ringColors.gcl}
-                    size={topRingSize}
+                    size={ringSize}
                   />
                   <CircularProgress
                     label={t("dashboard.gpl")}
                     level={profile?.gplLevel}
                     percent={profile?.gplProgressPercent}
                     ringColor={ringColors.gpl}
-                    size={topRingSize}
+                    size={ringSize}
                   />
                 </div>
               </div>
@@ -360,14 +417,16 @@ export function DashboardPanel() {
                       subText={formatRatio(cpuUsed, cpuLimit)}
                       ringColor={ringColors.cpu}
                       size={ringSize}
+                      shrinkPercentSymbol
                     />
                     <CircularProgress
                       label="MEM"
                       percent={memPercent}
                       valueText={formatPercent(memPercent)}
-                      subText={formatRatio(memUsed, memLimit)}
+                      subText={formatMemoryRatio(memUsed, memLimit)}
                       ringColor={ringColors.mem}
                       size={ringSize}
+                      shrinkPercentSymbol
                     />
                     <CircularProgress
                       label="BKT"
@@ -380,6 +439,7 @@ export function DashboardPanel() {
                       }
                       ringColor={ringColors.bkt}
                       size={ringSize}
+                      shrinkPercentSymbol
                     />
                   </div>
                 </div>

@@ -8,6 +8,7 @@ interface CircularProgressProps {
   subText?: string;
   ringColor?: string;
   size?: number;
+  shrinkPercentSymbol?: boolean;
 }
 
 function clampPercent(value: number | undefined): number {
@@ -42,8 +43,9 @@ export function CircularProgress({
   subText,
   ringColor,
   size = 110,
+  shrinkPercentSymbol = false,
 }: CircularProgressProps) {
-  const strokeWidth = Math.max(8, Math.round(size * 0.09));
+  const strokeWidth = Math.max(5, Math.round(size * 0.065));
   const safePercent = clampPercent(percent);
   const radius = (size - strokeWidth * 2) / 2;
   const center = size / 2;
@@ -51,6 +53,13 @@ export function CircularProgress({
   const dashOffset = circumference * (1 - safePercent / 100);
   const primaryText = valueText ?? formatLevel(level);
   const secondaryText = subText ?? formatPercent(percent);
+  const renderPrimaryWithSmallPercent =
+    shrinkPercentSymbol &&
+    primaryText.endsWith("%") &&
+    primaryText.length > 1;
+  const primaryTextWithoutPercent = renderPrimaryWithSmallPercent
+    ? primaryText.slice(0, -1)
+    : primaryText;
   const labelLength = label.length;
   const primaryLength = primaryText.length;
   const secondaryLength = secondaryText.length;
@@ -119,7 +128,22 @@ export function CircularProgress({
 
         <div className="circle-progress-center">
           <span className="circle-progress-inner-label">{label}</span>
-          <strong>{primaryText}</strong>
+          <strong
+            className={
+              renderPrimaryWithSmallPercent
+                ? "circle-progress-primary circle-progress-primary-small-percent"
+                : "circle-progress-primary"
+            }
+          >
+            {renderPrimaryWithSmallPercent ? (
+              <>
+                <span>{primaryTextWithoutPercent}</span>
+                <span className="circle-progress-percent-symbol">%</span>
+              </>
+            ) : (
+              primaryText
+            )}
+          </strong>
           <span className="circle-progress-sub">{secondaryText}</span>
         </div>
       </div>

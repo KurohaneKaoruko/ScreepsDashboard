@@ -67,6 +67,7 @@ export interface UserResourceSummary {
 
 export interface UserProfileSummary {
   avatarUrl?: string;
+  userId?: string;
   username: string;
   gclLevel?: number;
   gclProgress?: number;
