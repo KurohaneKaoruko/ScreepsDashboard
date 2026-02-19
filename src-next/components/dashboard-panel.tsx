@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
+import { fetchAllianceFullNameByPlayer } from "../lib/screeps/alliances";
 import { normalizeBaseUrl } from "../lib/screeps/request";
 import { fetchDashboardSnapshot } from "../lib/screeps/dashboard";
 import {
@@ -14,13 +15,17 @@ import {
   extractRuntimeMetricsFromEvent,
   type RuntimeMetricsPatch,
 } from "../lib/screeps/runtime-realtime";
+import {
+  buildRoomMapRealtimeChannels,
+  extractRoomMapOverlayFromEvent,
+  toRoomMapOverlayKey,
+  type RoomMapOverlay,
+} from "../lib/screeps/room-map-realtime";
 import { useAuthStore } from "../stores/auth-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { MetricCell } from "./metric-cell";
 import { CircularProgress } from "./circular-progress";
 import { TerrainThumbnail } from "./terrain-thumbnail";
-
-type RoomSortKey = "name" | "rcl" | "energy";
 
 function formatNumber(value: number | undefined, digits = 2): string {
   if (value === undefined) {
@@ -159,16 +164,36 @@ function buildRuntimeChannels(
   return [...channels];
 }
 
+function pickRoomMapOverlay(
+  overlays: Record<string, RoomMapOverlay>,
+  roomName: string,
+  shard?: string
+): RoomMapOverlay | undefined {
+  const exact = overlays[toRoomMapOverlayKey(roomName, shard)];
+  if (exact) {
+    return exact;
+  }
+
+  const fallback = overlays[toRoomMapOverlayKey(roomName)];
+  if (fallback) {
+    return fallback;
+  }
+
+  const normalizedRoom = roomName.trim().toUpperCase();
+  return Object.values(overlays).find(
+    (overlay) => overlay.roomName.toUpperCase() === normalizedRoom
+  );
+}
+
 export function DashboardPanel() {
   const { t } = useI18n();
   const session = useAuthStore((state) => state.session);
   const refreshIntervalMs = useSettingsStore((state) => state.refreshIntervalMs);
-  const [roomSortKey, setRoomSortKey] = useState<RoomSortKey>("rcl");
-  const [roomSortDesc, setRoomSortDesc] = useState(true);
-  const [roomFilterKeyword, setRoomFilterKeyword] = useState("");
   const [avatarCandidateIndex, setAvatarCandidateIndex] = useState(0);
   const [ringSize, setRingSize] = useState(114);
   const [runtimeMetrics, setRuntimeMetrics] = useState<RuntimeMetricsPatch>({});
+  const [roomMapOverlays, setRoomMapOverlays] = useState<Record<string, RoomMapOverlay>>({});
+  const [collapsedShardMap, setCollapsedShardMap] = useState<Record<string, boolean>>({});
 
   if (!session) {
     return null;
@@ -208,11 +233,50 @@ export function DashboardPanel() {
     [profile?.avatarUrl, profile?.username, session.baseUrl, session.username]
   );
   const avatarSrc = avatarCandidates[avatarCandidateIndex];
-  const realtimeChannels = useMemo(
+  const roomThumbnails = data?.roomThumbnails ?? [];
+  const runtimeRealtimeChannels = useMemo(
     () => buildRuntimeChannels(session.username, profile?.username, profile?.userId),
     [profile?.userId, profile?.username, session.username]
   );
-  const roomThumbnails = data?.roomThumbnails ?? [];
+  const roomRealtimeSubscriptionKey = useMemo(
+    () =>
+      roomThumbnails
+        .map((room) => `${room.shard ?? "unknown"}/${room.name}`)
+        .sort()
+        .join("|"),
+    [roomThumbnails]
+  );
+  const roomMapRealtimeChannels = useMemo(() => {
+    const channels = new Set<string>();
+    if (!roomRealtimeSubscriptionKey) {
+      return [];
+    }
+
+    const tokens = roomRealtimeSubscriptionKey.split("|");
+    for (const token of tokens) {
+      if (!token) {
+        continue;
+      }
+
+      const separatorIndex = token.indexOf("/");
+      if (separatorIndex <= 0 || separatorIndex >= token.length - 1) {
+        continue;
+      }
+
+      const shardToken = token.slice(0, separatorIndex);
+      const roomName = token.slice(separatorIndex + 1);
+      const shard = shardToken === "unknown" ? undefined : shardToken;
+      const roomChannels = buildRoomMapRealtimeChannels(roomName, shard);
+      for (const channel of roomChannels) {
+        channels.add(channel);
+      }
+    }
+    return [...channels];
+  }, [roomRealtimeSubscriptionKey]);
+  const realtimeChannels = useMemo(
+    () => [...new Set([...runtimeRealtimeChannels, ...roomMapRealtimeChannels])],
+    [runtimeRealtimeChannels, roomMapRealtimeChannels]
+  );
   const ringColors = {
     gcl: "#4cc4cb",
     gpl: "#d7636c",
@@ -221,62 +285,66 @@ export function DashboardPanel() {
     bkt: "#e6bd5b",
   } as const;
 
-  const filteredRooms = useMemo(() => {
-    const normalizedKeyword = roomFilterKeyword.trim().toLowerCase();
-    const items = roomThumbnails.filter((room) => {
-      if (!normalizedKeyword) {
-        return true;
+  const groupedRooms = useMemo(() => {
+    const sortedRooms = [...roomThumbnails].sort((left, right) => left.name.localeCompare(right.name));
+    const groups = new Map<string, typeof sortedRooms>();
+
+    for (const room of sortedRooms) {
+      const shardKey = (room.shard ?? "unknown").toLowerCase();
+      const shardRooms = groups.get(shardKey);
+      if (shardRooms) {
+        shardRooms.push(room);
+      } else {
+        groups.set(shardKey, [room]);
       }
-
-      return (
-        room.name.toLowerCase().includes(normalizedKeyword) ||
-        (room.owner ?? "").toLowerCase().includes(normalizedKeyword)
-      );
-    });
-
-    items.sort((left, right) => {
-      if (roomSortKey === "rcl") {
-        return (left.level ?? -1) - (right.level ?? -1);
-      }
-
-      if (roomSortKey === "energy") {
-        return (left.energyAvailable ?? -1) - (right.energyAvailable ?? -1);
-      }
-
-      return left.name.localeCompare(right.name);
-    });
-
-    return roomSortDesc ? items.reverse() : items;
-  }, [roomFilterKeyword, roomSortDesc, roomSortKey, roomThumbnails]);
-
-  const roomCount = roomThumbnails.length;
-  const roomLevelCount = roomThumbnails.filter((room) => room.level !== undefined).length;
-  const roomLevelAverage = roomLevelCount
-    ? roomThumbnails.reduce((sum, room) => sum + (room.level ?? 0), 0) / roomLevelCount
-    : undefined;
-  const roomEnergyPercent = (() => {
-    const totals = roomThumbnails.reduce(
-      (acc, room) => ({
-        current: acc.current + (room.energyAvailable ?? 0),
-        capacity: acc.capacity + (room.energyCapacity ?? 0),
-      }),
-      { current: 0, capacity: 0 }
-    );
-
-    if (totals.capacity <= 0) {
-      return undefined;
     }
 
-    return (totals.current / totals.capacity) * 100;
-  })();
+    const shardKeys = [...groups.keys()].sort((left, right) => {
+      if (left === "unknown") {
+        return 1;
+      }
+      if (right === "unknown") {
+        return -1;
+      }
+
+      const leftMatch = /^shard(\d+)$/i.exec(left);
+      const rightMatch = /^shard(\d+)$/i.exec(right);
+      if (leftMatch && rightMatch) {
+        return Number(leftMatch[1]) - Number(rightMatch[1]);
+      }
+      if (leftMatch) {
+        return -1;
+      }
+      if (rightMatch) {
+        return 1;
+      }
+      return left.localeCompare(right);
+    });
+
+    return shardKeys.map((shardKey) => ({
+      shardKey,
+      shardLabel: shardKey === "unknown" ? "unknown" : shardKey,
+      rooms: groups.get(shardKey) ?? [],
+    }));
+  }, [roomThumbnails]);
+  const displayUsername = profile?.username ?? session.username;
+  const { data: allianceFullName } = useSWR(
+    displayUsername ? ["loa-alliance", displayUsername.toLowerCase()] : null,
+    () => fetchAllianceFullNameByPlayer(displayUsername),
+    {
+      refreshInterval: 20 * 60 * 1000,
+      dedupingInterval: 60_000,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      shouldRetryOnError: false,
+    }
+  );
 
   useEffect(() => {
     setAvatarCandidateIndex(0);
   }, [avatarCandidates.length, profile?.avatarUrl, profile?.username, session.baseUrl]);
 
   useEffect(() => {
-    setRuntimeMetrics({});
-
     const realtimeClient = new ScreepsRealtimeClient({
       baseUrl: session.baseUrl,
       token: session.token,
@@ -285,19 +353,32 @@ export function DashboardPanel() {
       reconnectMaxMs: 20_000,
     });
 
-    const handleRuntime = (event: ScreepsRealtimeEvent) => {
-      const patch = extractRuntimeMetricsFromEvent(event);
-      if (!patch) {
+    const handleRealtime = (event: ScreepsRealtimeEvent) => {
+      const runtimePatch = extractRuntimeMetricsFromEvent(event);
+      if (runtimePatch) {
+        setRuntimeMetrics((current) => ({
+          ...current,
+          ...runtimePatch,
+        }));
+      }
+
+      const roomMapOverlay = extractRoomMapOverlayFromEvent(event);
+      if (!roomMapOverlay) {
         return;
       }
-      setRuntimeMetrics((current) => ({
+
+      const overlayKey = toRoomMapOverlayKey(
+        roomMapOverlay.roomName,
+        roomMapOverlay.shard
+      );
+      setRoomMapOverlays((current) => ({
         ...current,
-        ...patch,
+        [overlayKey]: roomMapOverlay,
       }));
     };
 
     const unsubs = realtimeChannels.map((channel) =>
-      realtimeClient.subscribe(channel, handleRuntime)
+      realtimeClient.subscribe(channel, handleRealtime)
     );
 
     realtimeClient.connect();
@@ -339,6 +420,13 @@ export function DashboardPanel() {
     setAvatarCandidateIndex((current) => current + 1);
   }
 
+  function toggleShardCollapse(shardKey: string) {
+    setCollapsedShardMap((current) => ({
+      ...current,
+      [shardKey]: !current[shardKey],
+    }));
+  }
+
   return (
     <section className="panel dashboard-panel">
       {error && !data ? <p className="error-text">{errorToMessage(error)}</p> : null}
@@ -371,7 +459,12 @@ export function DashboardPanel() {
                 </div>
 
                 <div className="profile-name-wrap">
-                  <p className="profile-name">{profile?.username ?? session.username}</p>
+                  <div>
+                    <p className="profile-name">{displayUsername}</p>
+                    {allianceFullName ? (
+                      <p className="profile-subline">{allianceFullName}</p>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="profile-top-rings">
@@ -447,84 +540,61 @@ export function DashboardPanel() {
             </div>
           </article>
 
-          <article className="card room-card-block">
-            <h2>{t("dashboard.roomThumbnails")}</h2>
-            <div className="metric-cluster">
-              <MetricCell label={t("dashboard.rooms")} value={String(roomCount)} align="right" />
-              <MetricCell
-                label={t("rooms.level")}
-                value={roomLevelAverage === undefined ? "N/A" : roomLevelAverage.toFixed(2)}
-                align="right"
-              />
-              <MetricCell
-                label={t("dashboard.energy")}
-                value={roomEnergyPercent === undefined ? "N/A" : formatPercent(roomEnergyPercent)}
-                align="right"
-              />
-              <MetricCell label="Filtered" value={String(filteredRooms.length)} align="right" />
-            </div>
-
-            <div className="control-row">
-              <label className="field compact-field">
-                <span>Filter</span>
-                <input
-                  value={roomFilterKeyword}
-                  onChange={(event) => setRoomFilterKeyword(event.currentTarget.value)}
-                  placeholder="W8N3 / owner"
-                />
-              </label>
-
-              <label className="field compact-field">
-                <span>Sort</span>
-                <select
-                  className="compact-select"
-                  value={roomSortKey}
-                  onChange={(event) => setRoomSortKey(event.currentTarget.value as RoomSortKey)}
-                >
-                  <option value="rcl">{t("rooms.level")}</option>
-                  <option value="energy">{t("dashboard.energy")}</option>
-                  <option value="name">{t("rooms.room")}</option>
-                </select>
-              </label>
-
-              <button
-                className="secondary-button"
-                onClick={() => setRoomSortDesc((current) => !current)}
-                type="button"
-              >
-                {roomSortDesc ? "DESC" : "ASC"}
-              </button>
-            </div>
-
-            {filteredRooms.length ? (
-              <div className="room-thumb-grid">
-                {filteredRooms.map((room) => (
-                  <Link
-                    className="room-thumb-card"
-                    href={`/user/room?name=${encodeURIComponent(room.name)}`}
-                    key={room.name}
-                  >
-                    <div className="room-thumb-head">
-                      <strong>{room.name}</strong>
-                      <span>{t("dashboard.rcl")}: {room.level ?? "N/A"}</span>
+          {groupedRooms.length ? (
+            <>
+              {groupedRooms.map((group) => {
+                const collapsed = Boolean(collapsedShardMap[group.shardKey]);
+                return (
+                  <section className="room-shard-block" key={group.shardKey}>
+                    <div className="room-shard-head">
+                      <button
+                        aria-expanded={!collapsed}
+                        className="room-shard-toggle"
+                        onClick={() => toggleShardCollapse(group.shardKey)}
+                        type="button"
+                      >
+                        <h3 className="room-shard-title">
+                          {group.rooms.length} {t("dashboard.rooms")} on {group.shardLabel}
+                        </h3>
+                        <span
+                          aria-hidden="true"
+                          className={collapsed ? "room-shard-caret collapsed" : "room-shard-caret"}
+                        />
+                      </button>
                     </div>
-                    <TerrainThumbnail encoded={room.terrainEncoded} roomName={room.name} size={112} />
-                    <div className="room-thumb-stats">
-                      <span>
-                        {t("dashboard.owner")}: {room.owner ?? t("common.notAvailable")}
-                      </span>
-                      <span>
-                        {t("dashboard.energy")}: {room.energyAvailable ?? "N/A"} /{" "}
-                        {room.energyCapacity ?? "N/A"}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="hint-text">{t("dashboard.noRooms")}</p>
-            )}
-          </article>
+                    {collapsed ? null : (
+                      <div className="room-thumb-grid">
+                        {group.rooms.map((room) => {
+                          const roomOverlay = pickRoomMapOverlay(roomMapOverlays, room.name, room.shard);
+                          const roomKey = room.shard ? `${room.shard}/${room.name}` : room.name;
+                          return (
+                            <Link
+                              className="room-thumb-card"
+                              href={`/user/room?name=${encodeURIComponent(room.name)}`}
+                              key={roomKey}
+                            >
+                              <div className="room-thumb-head">
+                                <strong>{room.name}</strong>
+                                <span>{t("dashboard.rcl")}: {room.level ?? "N/A"}</span>
+                              </div>
+                              <TerrainThumbnail
+                                encoded={room.terrainEncoded}
+                                roomName={room.name}
+                                size={112}
+                                mapOverlay={roomOverlay}
+                              />
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
+            </>
+          ) : (
+            <p className="hint-text">{t("dashboard.noRooms")}</p>
+          )}
         </div>
       ) : null}
     </section>

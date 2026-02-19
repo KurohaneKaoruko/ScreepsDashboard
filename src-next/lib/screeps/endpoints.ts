@@ -60,16 +60,23 @@ const PROFILE_CANDIDATES: ScreepsEndpointConfig[] = [
   { id: "user_me", endpoint: "/api/user/me", method: "GET" },
 ];
 
-const ROOMS_CANDIDATES: ScreepsEndpointConfig[] = [
-  { id: "user_rooms_get", endpoint: "/api/user/rooms", method: "GET" },
-  { id: "user_rooms_post", endpoint: "/api/user/rooms", method: "POST", body: {} },
-  {
-    id: "game_rooms",
-    endpoint: "/api/game/rooms",
-    method: "POST",
-    body: { rooms: [], shard: "shard0" },
-  },
-];
+function buildRoomsCandidates(userId?: string): ScreepsEndpointConfig[] {
+  const normalizedUserId = findString(userId);
+  const candidates: ScreepsEndpointConfig[] = [];
+
+  if (normalizedUserId) {
+    candidates.push({
+      id: "user_rooms_get_with_id",
+      endpoint: "/api/user/rooms",
+      method: "GET",
+      query: { id: normalizedUserId },
+    });
+  }
+
+  candidates.push({ id: "user_rooms_get", endpoint: "/api/user/rooms", method: "GET" });
+
+  return candidates;
+}
 
 const STATS_CANDIDATES: ScreepsEndpointConfig[] = [
   {
@@ -110,6 +117,19 @@ function findString(value: unknown): string | null {
     return value.trim();
   }
   return null;
+}
+
+function extractUserId(payload: unknown): string | undefined {
+  const root = asRecord(payload) ?? {};
+  const user = asRecord(root.user) ?? {};
+  return (
+    findString(user._id) ??
+    findString(user.id) ??
+    findString(root._id) ??
+    findString(root.id) ??
+    findString(root.userId) ??
+    undefined
+  );
 }
 
 function extractToken(payload: unknown): string | null {
@@ -283,9 +303,10 @@ export async function probeSupportedEndpoints(
     username,
     true
   );
+  const profileUserId = extractUserId(profile.sample);
   const rooms = await probeGroup(
     "rooms",
-    ROOMS_CANDIDATES,
+    buildRoomsCandidates(profileUserId),
     baseUrl,
     token,
     username,
@@ -344,8 +365,10 @@ export async function probeProfileEndpoint(
 }
 
 export function buildOptimisticEndpointMap(
-  profileOverride?: ScreepsEndpointConfig
+  profileOverride?: ScreepsEndpointConfig,
+  profileSample?: unknown
 ): EndpointMap {
+  const profileUserId = extractUserId(profileSample);
   const profile = profileOverride
     ? {
         ...profileOverride,
@@ -357,7 +380,10 @@ export function buildOptimisticEndpointMap(
       }
     : { ...OPTIMISTIC_ENDPOINT_MAP.profile };
   const rooms = OPTIMISTIC_ENDPOINT_MAP.rooms
-    ? { ...OPTIMISTIC_ENDPOINT_MAP.rooms }
+    ? {
+        ...OPTIMISTIC_ENDPOINT_MAP.rooms,
+        query: profileUserId ? { id: profileUserId } : OPTIMISTIC_ENDPOINT_MAP.rooms.query,
+      }
     : undefined;
   const stats = OPTIMISTIC_ENDPOINT_MAP.stats
     ? {

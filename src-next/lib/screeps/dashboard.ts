@@ -11,7 +11,9 @@ import type {
   UserResourceSummary,
 } from "./types";
 
-const ROOM_NAME_PATTERN = /^[WE]\d+[NS]\d+$/;
+const ROOM_NAME_PATTERN = /^[WE]\d+[NS]\d+$/i;
+const ROOM_NAME_EXTRACT_PATTERN = /[WE]\d+[NS]\d+/i;
+const SHARD_NAME_PATTERN = /^shard\d+$/i;
 const PROFILE_SIGNAL_KEYS = [
   "user",
   "username",
@@ -72,19 +74,34 @@ const PROFILE_FALLBACK_ENDPOINTS: DashboardFallbackEndpoint[] = [
   { endpoint: "/api/auth/me", method: "GET" },
 ];
 
-const ROOMS_FALLBACK_ENDPOINTS: DashboardFallbackEndpoint[] = [
-  { endpoint: "/api/user/rooms", method: "GET" },
-  { endpoint: "/api/user/rooms", method: "POST", body: {} },
-  {
-    endpoint: "/api/game/rooms",
-    method: "POST",
-    body: { rooms: [], shard: "shard0" },
-  },
-];
+function buildRoomsFallbackEndpoints(userId?: string): DashboardFallbackEndpoint[] {
+  const normalizedUserId = typeof userId === "string" ? userId.trim() : "";
+  const endpoints: DashboardFallbackEndpoint[] = [];
+
+  if (normalizedUserId) {
+    endpoints.push({
+      endpoint: "/api/user/rooms",
+      method: "GET",
+      query: { id: normalizedUserId },
+    });
+  }
+
+  endpoints.push({ endpoint: "/api/user/rooms", method: "GET" });
+
+  return endpoints;
+}
 
 const DEFAULT_MEMORY_LIMIT_KB = 2_048;
 const MEMORY_MB_UPPER_BOUND = 16;
 const MEMORY_BYTES_LOWER_BOUND = 16_384;
+
+function normalizeRoomName(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const match = value.trim().toUpperCase().match(ROOM_NAME_EXTRACT_PATTERN);
+  return match?.[0];
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -923,14 +940,31 @@ function extractProfile(
   };
 }
 
+function extractProfileUserId(payload: unknown): string | undefined {
+  const root = pickPayloadRecord(payload, PROFILE_SIGNAL_KEYS);
+  const user = asRecord(root.user) ?? {};
+  return firstString([user._id, user.id, root._id, root.id, root.userId]);
+}
+
 function mergeRoomSummary(
   sink: Map<string, RoomSummary>,
   roomName: string,
-  payload: unknown
+  payload: unknown,
+  shardHint?: string
 ): void {
   const record = asRecord(payload) ?? {};
   const controller = asRecord(record.controller) ?? {};
   const previous = sink.get(roomName);
+  const shardCandidate = firstString([
+    record.shard,
+    record.shardName,
+    shardHint,
+    previous?.shard,
+  ]);
+  const shard =
+    shardCandidate && SHARD_NAME_PATTERN.test(shardCandidate)
+      ? shardCandidate.toLowerCase()
+      : previous?.shard;
 
   const owner = firstString([record.owner, controller.user, controller.owner, previous?.owner]);
   const level = firstNumber([controller.level, record.level, previous?.level]);
@@ -947,6 +981,7 @@ function mergeRoomSummary(
 
   sink.set(roomName, {
     name: roomName,
+    shard,
     owner,
     level,
     energyAvailable,
@@ -957,7 +992,8 @@ function mergeRoomSummary(
 function collectRoomSummary(
   value: unknown,
   sink: Map<string, RoomSummary>,
-  depth: number
+  depth: number,
+  shardHint?: string
 ): void {
   if (depth > 6 || value === null || value === undefined) {
     return;
@@ -966,10 +1002,11 @@ function collectRoomSummary(
   if (Array.isArray(value)) {
     for (const item of value) {
       const name = asString(item);
-      if (name && ROOM_NAME_PATTERN.test(name)) {
-        mergeRoomSummary(sink, name, {});
+      const normalizedName = normalizeRoomName(name);
+      if (normalizedName && ROOM_NAME_PATTERN.test(normalizedName)) {
+        mergeRoomSummary(sink, normalizedName, {}, shardHint);
       }
-      collectRoomSummary(item, sink, depth + 1);
+      collectRoomSummary(item, sink, depth + 1, shardHint);
     }
     return;
   }
@@ -979,17 +1016,26 @@ function collectRoomSummary(
     return;
   }
 
-  const roomName = firstString([record.room, record.roomName, record.name, record._id]);
+  const explicitShard = firstString([record.shard, record.shardName]);
+  const normalizedShard =
+    explicitShard && SHARD_NAME_PATTERN.test(explicitShard)
+      ? explicitShard.toLowerCase()
+      : shardHint;
+  const roomName = normalizeRoomName(
+    firstString([record.room, record.roomName, record.name, record._id])
+  );
 
   if (roomName && ROOM_NAME_PATTERN.test(roomName)) {
-    mergeRoomSummary(sink, roomName, record);
+    mergeRoomSummary(sink, roomName, record, normalizedShard);
   }
 
   for (const [key, nested] of Object.entries(record)) {
-    if (ROOM_NAME_PATTERN.test(key)) {
-      mergeRoomSummary(sink, key, nested);
+    const normalizedKeyRoom = normalizeRoomName(key);
+    if (normalizedKeyRoom && ROOM_NAME_PATTERN.test(normalizedKeyRoom)) {
+      mergeRoomSummary(sink, normalizedKeyRoom, nested, normalizedShard);
     }
-    collectRoomSummary(nested, sink, depth + 1);
+    const nextShard = SHARD_NAME_PATTERN.test(key) ? key.toLowerCase() : normalizedShard;
+    collectRoomSummary(nested, sink, depth + 1, nextShard);
   }
 }
 
@@ -1160,10 +1206,15 @@ async function fetchRoomThumbnail(
   username: string,
   room: RoomSummary
 ): Promise<RoomThumbnail> {
-  const terrainQueries: QueryParams[] = [
-    { room: room.name, encoded: 1 },
-    { room: room.name, encoded: 1, shard: "shard0" },
-  ];
+  const terrainQueries: QueryParams[] = [];
+
+  if (room.shard) {
+    terrainQueries.push({ room: room.name, encoded: 1, shard: room.shard });
+  }
+  terrainQueries.push({ room: room.name, encoded: 1 });
+  if (!room.shard || room.shard !== "shard0") {
+    terrainQueries.push({ room: room.name, encoded: 1, shard: "shard0" });
+  }
 
   for (const query of terrainQueries) {
     try {
@@ -1322,6 +1373,7 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
 
   let safeRoomsPayload = roomsResponse?.ok ? roomsResponse.data : undefined;
   let safeStatsPayload = statsResponse?.ok ? statsResponse.data : undefined;
+  const profileUserId = extractProfileUserId(safeProfileResponse.data);
 
   const profileHasStatsSignals = hasUsefulStatsPayload(safeProfileResponse.data);
   if (!hasUsefulStatsPayload(safeStatsPayload) && !profileHasStatsSignals) {
@@ -1337,10 +1389,28 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
   }
 
   const profileHasRooms = hasUsefulRoomsPayload(safeProfileResponse.data);
+  if (!hasUsefulRoomsPayload(safeRoomsPayload) && profileUserId) {
+    try {
+      const roomsWithId = await screepsRequest({
+        baseUrl: session.baseUrl,
+        endpoint: "/api/user/rooms",
+        method: "GET",
+        query: { id: profileUserId },
+        token: session.token,
+        username: session.username,
+      });
+      if (roomsWithId.ok) {
+        safeRoomsPayload = roomsWithId.data;
+      }
+    } catch {
+      // Ignore and keep fallback chain below.
+    }
+  }
+
   if (!hasUsefulRoomsPayload(safeRoomsPayload) && !profileHasRooms) {
     const fallbackRoomsPayload = await tryFallbackPayload(
       session,
-      ROOMS_FALLBACK_ENDPOINTS,
+      buildRoomsFallbackEndpoints(profileUserId),
       session.endpointMap.rooms,
       hasUsefulRoomsPayload
     );

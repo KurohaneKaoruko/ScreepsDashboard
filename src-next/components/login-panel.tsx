@@ -265,7 +265,10 @@ export function LoginPanel() {
         baseUrl,
         token: resolvedToken,
         username: initialDisplayName,
-        endpointMap: buildOptimisticEndpointMap(profileProbe?.profileEndpoint),
+        endpointMap: buildOptimisticEndpointMap(
+          profileProbe?.profileEndpoint,
+          profileProbe?.profileSample
+        ),
         verifiedAt: new Date().toISOString(),
         probes: profileProbe?.probes ?? [],
         serverId: resolvedServerId,

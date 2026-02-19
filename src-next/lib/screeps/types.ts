@@ -90,6 +90,7 @@ export interface UserProfileSummary {
 
 export interface RoomSummary {
   name: string;
+  shard?: string;
   owner?: string;
   level?: number;
   energyAvailable?: number;

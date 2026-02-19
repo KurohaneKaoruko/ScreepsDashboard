@@ -776,10 +776,17 @@ a {
 .shell-content {
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
   overflow-x: hidden;
   max-width: 100%;
   padding-right: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.shell-content::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .dashboard-panel,
@@ -1037,6 +1044,7 @@ a {
   margin: 0;
   color: var(--text-soft);
   font-size: 0.74rem;
+  font-weight: 700;
 }
 
 .circle-progress {
@@ -1241,20 +1249,88 @@ a {
   margin-top: 10px;
 }
 
+.room-shard-block {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #050505;
+  overflow: hidden;
+}
+
+.room-shard-head {
+  border-bottom: 1px solid #141414;
+  background: #090909;
+}
+
+.room-shard-toggle {
+  position: relative;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 40px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.room-shard-toggle:hover {
+  background: #0d0d0d;
+}
+
+.room-shard-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.room-shard-title {
+  margin: 0;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #dedede;
+}
+
+.room-shard-caret {
+  position: absolute;
+  right: 14px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid #8f8f8f;
+  border-bottom: 2px solid #8f8f8f;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.room-shard-toggle:hover .room-shard-caret {
+  border-color: #c5c5c5;
+}
+
+.room-shard-caret.collapsed {
+  transform: rotate(-45deg);
+}
+
 .room-thumb-grid {
-  margin-top: 8px;
+  padding: 8px;
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
+  justify-content: flex-start;
 }
 
 .room-thumb-card {
+  width: 148px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: #050505;
   padding: 7px;
   display: grid;
   gap: 7px;
+  justify-items: start;
 }
 
 .room-thumb-card:hover {
@@ -1265,7 +1341,9 @@ a {
   display: flex;
   justify-content: space-between;
   gap: 6px;
-  align-items: baseline;
+  align-items: flex-start;
+  width: 132px;
+  max-width: 100%;
 }
 
 .room-thumb-head strong {
@@ -1276,14 +1354,6 @@ a {
 .room-thumb-head span {
   font-size: 0.66rem;
   color: var(--text-soft);
-}
-
-.room-thumb-stats {
-  display: grid;
-  gap: 3px;
-  font-size: 0.68rem;
-  color: var(--text-soft);
-  font-variant-numeric: tabular-nums;
 }
 
 .terrain-canvas {
@@ -1510,7 +1580,7 @@ a {
   }
 
   .room-thumb-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
   }
 
   .profile-detail-grid {
@@ -1756,7 +1826,7 @@ a {
   }
 
   .room-thumb-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
   }
 
   .dense-table,
@@ -1812,7 +1882,7 @@ a {
   }
 
   .room-thumb-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
   }
 
   .dense-table,
