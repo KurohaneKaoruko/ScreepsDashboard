@@ -96,6 +96,18 @@ const MEMORY_MB_UPPER_BOUND = 16;
 const MEMORY_BYTES_LOWER_BOUND = 16_384;
 const ROOM_THUMBNAIL_MAX_ATTEMPTS = 3;
 const ROOM_THUMBNAIL_RETRY_BASE_MS = 450;
+const ROOM_THUMBNAIL_RETRY_DELAY_MS = 12_000;
+const ROOM_THUMBNAIL_NON_TRANSIENT_RETRY_DELAY_MS = 48_000;
+const ROOM_THUMBNAIL_REQUEST_WINDOW_MS = 60_000;
+const ROOM_THUMBNAIL_REQUEST_LIMIT = 6;
+const ROOM_THUMBNAIL_CACHE = new Map<string, string>();
+const ROOM_THUMBNAIL_RETRY_AT = new Map<string, number>();
+const ROOM_THUMBNAIL_REQUEST_TIMESTAMPS: number[] = [];
+const ROOM_LEVEL_CACHE = new Map<string, number>();
+const ROOM_LEVEL_RETRY_AT = new Map<string, number>();
+const ROOM_LEVEL_RETRY_DELAY_MS = 30_000;
+const MAP_STATS_RCL_BATCH_SIZE = 40;
+const MAP_STATS_RCL_STAT_NAME = "owner0";
 
 function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
@@ -105,6 +117,64 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function buildRoomThumbnailKey(room: RoomSummary, baseUrl: string): string {
+  const normalizedBase = normalizeBaseUrl(baseUrl).toLowerCase();
+  const shard = room.shard?.trim().toLowerCase() ?? "unknown";
+  return `${normalizedBase}|${shard}:${room.name.trim().toUpperCase()}`;
+}
+
+function buildRoomLevelKey(room: RoomSummary, baseUrl: string): string {
+  return buildRoomThumbnailKey(room, baseUrl);
+}
+
+function toTerrainThumbnail(room: RoomSummary, terrainEncoded: string): RoomThumbnail {
+  return {
+    ...room,
+    terrainEncoded,
+    thumbnailSource: "terrain",
+  };
+}
+
+function toFallbackThumbnail(room: RoomSummary): RoomThumbnail {
+  return {
+    ...room,
+    thumbnailSource: "fallback",
+  };
+}
+
+function pruneRoomThumbnailRequestTimestamps(now: number): void {
+  while (ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.length > 0) {
+    const oldest = ROOM_THUMBNAIL_REQUEST_TIMESTAMPS[0];
+    if (now - oldest < ROOM_THUMBNAIL_REQUEST_WINDOW_MS) {
+      break;
+    }
+    ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.shift();
+  }
+}
+
+function reserveRoomThumbnailRequestSlot(): boolean {
+  const now = Date.now();
+  pruneRoomThumbnailRequestTimestamps(now);
+  if (ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.length >= ROOM_THUMBNAIL_REQUEST_LIMIT) {
+    return false;
+  }
+  ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.push(now);
+  return true;
+}
+
+function canRetryRoomThumbnail(baseUrl: string, room: RoomSummary, now: number): boolean {
+  const retryAt = ROOM_THUMBNAIL_RETRY_AT.get(buildRoomThumbnailKey(room, baseUrl));
+  return retryAt === undefined || retryAt <= now;
+}
+
+function scheduleRoomThumbnailRetry(baseUrl: string, room: RoomSummary, delayMs: number): void {
+  ROOM_THUMBNAIL_RETRY_AT.set(buildRoomThumbnailKey(room, baseUrl), Date.now() + delayMs);
+}
+
+function clearRoomThumbnailRetry(baseUrl: string, room: RoomSummary): void {
+  ROOM_THUMBNAIL_RETRY_AT.delete(buildRoomThumbnailKey(room, baseUrl));
 }
 
 function normalizeRoomName(value: string | undefined): string | undefined {
@@ -966,6 +1036,11 @@ function mergeRoomSummary(
 ): void {
   const record = asRecord(payload) ?? {};
   const controller = asRecord(record.controller) ?? {};
+  const own = asRecord(record.own) ?? {};
+  const owner0 = asRecord(record.owner0) ?? {};
+  const status = asRecord(record.status) ?? {};
+  const stats = asRecord(record.stats) ?? {};
+  const statsController = asRecord(stats.controller) ?? {};
   const previous = sink.get(roomName);
   const shardCandidate = firstString([
     record.shard,
@@ -978,8 +1053,29 @@ function mergeRoomSummary(
       ? shardCandidate.toLowerCase()
       : previous?.shard;
 
-  const owner = firstString([record.owner, controller.user, controller.owner, previous?.owner]);
-  const level = firstNumber([controller.level, record.level, previous?.level]);
+  const owner = firstString([
+    record.owner,
+    controller.user,
+    controller.owner,
+    own.user,
+    own.owner,
+    owner0.user,
+    owner0.owner,
+    previous?.owner,
+  ]);
+  const level = firstLikelyLevel([
+    controller.level,
+    record.level,
+    record.rcl,
+    record.controllerLevel,
+    record.cl,
+    own.level,
+    owner0.level,
+    status.level,
+    stats.level,
+    statsController.level,
+    previous?.level,
+  ]);
   const energyAvailable = firstNumber([
     record.energyAvailable,
     record.energy,
@@ -1060,6 +1156,160 @@ function extractRooms(roomsPayload: unknown, profilePayload: unknown): RoomSumma
   }
 
   return [...sink.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function splitIntoChunks<T>(items: T[], chunkSize: number): T[][] {
+  const normalizedChunkSize = Math.max(1, Math.floor(chunkSize));
+  const output: T[][] = [];
+  for (let index = 0; index < items.length; index += normalizedChunkSize) {
+    output.push(items.slice(index, index + normalizedChunkSize));
+  }
+  return output;
+}
+
+function mergeRoomSummaries(
+  baseRooms: RoomSummary[],
+  payload: unknown,
+  shardHint?: string
+): RoomSummary[] {
+  const sink = new Map<string, RoomSummary>();
+  for (const room of baseRooms) {
+    sink.set(room.name, room);
+  }
+  collectRoomSummary(payload, sink, 0, shardHint);
+  return [...sink.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function buildRoomLevelMap(baseUrl: string, rooms: RoomSummary[]): Map<string, number> {
+  const levelByKey = new Map<string, number>();
+  for (const room of rooms) {
+    if (room.level === undefined) {
+      continue;
+    }
+    levelByKey.set(buildRoomLevelKey(room, baseUrl), room.level);
+  }
+  return levelByKey;
+}
+
+function applyRoomLevelCache(baseUrl: string, rooms: RoomSummary[]): RoomSummary[] {
+  return rooms.map((room) => {
+    if (room.level !== undefined) {
+      ROOM_LEVEL_CACHE.set(buildRoomLevelKey(room, baseUrl), room.level);
+      return room;
+    }
+
+    const cachedLevel = ROOM_LEVEL_CACHE.get(buildRoomLevelKey(room, baseUrl));
+    if (cachedLevel === undefined) {
+      return room;
+    }
+
+    return {
+      ...room,
+      level: cachedLevel,
+    };
+  });
+}
+
+async function hydrateRoomLevelsFromMapStats(
+  session: ScreepsSession,
+  rooms: RoomSummary[]
+): Promise<RoomSummary[]> {
+  if (!rooms.length) {
+    return rooms;
+  }
+
+  let mergedRooms = applyRoomLevelCache(session.baseUrl, rooms);
+  const now = Date.now();
+  const pendingByShard = new Map<string, RoomSummary[]>();
+
+  for (const room of mergedRooms) {
+    if (room.level !== undefined) {
+      continue;
+    }
+
+    const roomKey = buildRoomLevelKey(room, session.baseUrl);
+    const retryAt = ROOM_LEVEL_RETRY_AT.get(roomKey);
+    if (retryAt !== undefined && retryAt > now) {
+      continue;
+    }
+
+    const shardKey = room.shard?.trim().toLowerCase() ?? "";
+    const shardRooms = pendingByShard.get(shardKey);
+    if (shardRooms) {
+      shardRooms.push(room);
+    } else {
+      pendingByShard.set(shardKey, [room]);
+    }
+  }
+
+  if (pendingByShard.size === 0) {
+    return mergedRooms;
+  }
+
+  for (const [shardKey, shardRooms] of pendingByShard) {
+    const chunks = splitIntoChunks(shardRooms, MAP_STATS_RCL_BATCH_SIZE);
+    for (const roomChunk of chunks) {
+      const roomNames = roomChunk.map((room) => room.name);
+      const requestBodies: Array<{ rooms: string[]; statName: string; shard?: string }> = [];
+
+      if (shardKey) {
+        requestBodies.push({
+          rooms: roomNames,
+          statName: MAP_STATS_RCL_STAT_NAME,
+          shard: shardKey,
+        });
+      }
+      requestBodies.push({
+        rooms: roomNames,
+        statName: MAP_STATS_RCL_STAT_NAME,
+      });
+
+      for (const body of requestBodies) {
+        try {
+          const response = await screepsRequest({
+            baseUrl: session.baseUrl,
+            endpoint: "/api/game/map-stats",
+            method: "POST",
+            body,
+            token: session.token,
+            username: session.username,
+          });
+          if (!response.ok) {
+            continue;
+          }
+
+          mergedRooms = mergeRoomSummaries(mergedRooms, response.data, shardKey || undefined);
+
+          const levelByKey = buildRoomLevelMap(session.baseUrl, mergedRooms);
+          const unresolvedCount = roomChunk.reduce((count, room) => {
+            const roomLevel = levelByKey.get(buildRoomLevelKey(room, session.baseUrl));
+            return roomLevel === undefined ? count + 1 : count;
+          }, 0);
+
+          if (unresolvedCount === 0) {
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      const resolvedLevels = buildRoomLevelMap(session.baseUrl, mergedRooms);
+      const retryAt = Date.now() + ROOM_LEVEL_RETRY_DELAY_MS;
+      for (const room of roomChunk) {
+        const roomKey = buildRoomLevelKey(room, session.baseUrl);
+        const resolvedLevel = resolvedLevels.get(roomKey);
+        if (resolvedLevel !== undefined) {
+          ROOM_LEVEL_CACHE.set(roomKey, resolvedLevel);
+          ROOM_LEVEL_RETRY_AT.delete(roomKey);
+        } else {
+          ROOM_LEVEL_RETRY_AT.set(roomKey, retryAt);
+        }
+      }
+    }
+  }
+
+  return mergedRooms;
 }
 
 function endpointIdentity(
@@ -1262,6 +1512,12 @@ async function fetchRoomThumbnail(
   username: string,
   room: RoomSummary
 ): Promise<RoomThumbnail> {
+  const roomKey = buildRoomThumbnailKey(room, baseUrl);
+  const cachedTerrain = ROOM_THUMBNAIL_CACHE.get(roomKey);
+  if (cachedTerrain) {
+    return toTerrainThumbnail(room, cachedTerrain);
+  }
+
   const terrainQueries: QueryParams[] = [];
 
   if (room.shard) {
@@ -1272,10 +1528,19 @@ async function fetchRoomThumbnail(
     terrainQueries.push({ room: room.name, encoded: 1, shard: "shard0" });
   }
 
+  let transientOrUnknownFailure = false;
   for (let attempt = 0; attempt < ROOM_THUMBNAIL_MAX_ATTEMPTS; attempt += 1) {
     let shouldRetry = false;
+    let rateLimited = false;
 
     for (const query of terrainQueries) {
+      if (!reserveRoomThumbnailRequestSlot()) {
+        shouldRetry = true;
+        rateLimited = true;
+        transientOrUnknownFailure = true;
+        break;
+      }
+
       try {
         const response = await screepsRequest({
           baseUrl,
@@ -1289,6 +1554,7 @@ async function fetchRoomThumbnail(
         if (!response.ok) {
           if (isTransientStatus(response.status)) {
             shouldRetry = true;
+            transientOrUnknownFailure = true;
           }
           continue;
         }
@@ -1297,20 +1563,23 @@ async function fetchRoomThumbnail(
         if (!terrainEncoded) {
           // Some servers occasionally return empty payloads; retry with backoff.
           shouldRetry = true;
+          transientOrUnknownFailure = true;
           continue;
         }
 
-        return {
-          ...room,
-          terrainEncoded,
-          thumbnailSource: "terrain",
-        };
+        ROOM_THUMBNAIL_CACHE.set(roomKey, terrainEncoded);
+        clearRoomThumbnailRetry(baseUrl, room);
+        return toTerrainThumbnail(room, terrainEncoded);
       } catch {
         shouldRetry = true;
+        transientOrUnknownFailure = true;
         continue;
       }
     }
 
+    if (rateLimited) {
+      break;
+    }
     if (!shouldRetry || attempt >= ROOM_THUMBNAIL_MAX_ATTEMPTS - 1) {
       break;
     }
@@ -1318,10 +1587,14 @@ async function fetchRoomThumbnail(
     await wait((attempt + 1) * ROOM_THUMBNAIL_RETRY_BASE_MS);
   }
 
-  return {
-    ...room,
-    thumbnailSource: "fallback",
-  };
+  scheduleRoomThumbnailRetry(
+    baseUrl,
+    room,
+    transientOrUnknownFailure
+      ? ROOM_THUMBNAIL_RETRY_DELAY_MS
+      : ROOM_THUMBNAIL_NON_TRANSIENT_RETRY_DELAY_MS
+  );
+  return toFallbackThumbnail(room);
 }
 
 async function mapWithConcurrency<T, R>(
@@ -1352,9 +1625,20 @@ async function fetchRoomThumbnails(session: ScreepsSession, rooms: RoomSummary[]
     return [];
   }
 
-  return mapWithConcurrency(rooms, 4, (room) =>
-    fetchRoomThumbnail(session.baseUrl, session.token, session.username, room)
-  );
+  const now = Date.now();
+  return mapWithConcurrency(rooms, 4, (room) => {
+    const roomKey = buildRoomThumbnailKey(room, session.baseUrl);
+    const cachedTerrain = ROOM_THUMBNAIL_CACHE.get(roomKey);
+    if (cachedTerrain) {
+      return Promise.resolve(toTerrainThumbnail(room, cachedTerrain));
+    }
+
+    if (!canRetryRoomThumbnail(session.baseUrl, room, now)) {
+      return Promise.resolve(toFallbackThumbnail(room));
+    }
+
+    return fetchRoomThumbnail(session.baseUrl, session.token, session.username, room);
+  });
 }
 
 export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<DashboardSnapshot> {
@@ -1524,7 +1808,8 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
     }
   }
 
-  const rooms = extractRooms(safeRoomsPayload, safeProfileResponse.data);
+  const parsedRooms = extractRooms(safeRoomsPayload, safeProfileResponse.data);
+  const rooms = await hydrateRoomLevelsFromMapStats(session, parsedRooms);
   const roomThumbnails = await fetchRoomThumbnails(session, rooms);
 
   return {

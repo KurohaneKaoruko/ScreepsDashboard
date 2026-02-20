@@ -27,11 +27,30 @@ import { MetricCell } from "./metric-cell";
 import { CircularProgress } from "./circular-progress";
 import { TerrainThumbnail } from "./terrain-thumbnail";
 
-function formatNumber(value: number | undefined, digits = 2): string {
+function formatNumber(
+  value: number | undefined,
+  digits = 2,
+  options?: { fixed?: boolean }
+): string {
   if (value === undefined) {
     return "N/A";
   }
-  return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(digits);
+
+  if (options?.fixed) {
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+  }
+
+  if (Number.isInteger(value)) {
+    return value.toLocaleString();
+  }
+
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }
 
 function formatPercent(value: number | undefined): string {
@@ -52,7 +71,7 @@ function formatMemoryRatio(used: number | undefined, total: number | undefined):
   if (used === undefined || total === undefined) {
     return "--/--";
   }
-  return `${formatNumber(used)}/${formatNumber(total)}`;
+  return `${formatNumber(used, 0)}/${formatNumber(total, 0)}`;
 }
 
 function errorToMessage(error: unknown): string {
@@ -484,7 +503,7 @@ export function DashboardPanel() {
                 <div className="profile-resource-grid">
                   <MetricCell
                     label={t("dashboard.credits")}
-                    value={formatNumber(profile?.resources.credits)}
+                    value={formatNumber(profile?.resources.credits, 3, { fixed: true })}
                   />
                   <MetricCell
                     label={t("dashboard.cpuUnlock")}

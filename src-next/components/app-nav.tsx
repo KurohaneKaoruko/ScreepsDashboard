@@ -11,11 +11,15 @@ interface NavItem {
   meta: string;
 }
 
+interface AppNavProps {
+  onNavigate?: () => void;
+}
+
 function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppNav() {
+export function AppNav({ onNavigate }: AppNavProps) {
   const pathname = usePathname();
   const session = useAuthStore((state) => state.session);
   const { t } = useI18n();
@@ -70,6 +74,7 @@ export function AppNav() {
             key={item.href}
             href={item.href}
             className={active ? "nav-link active" : "nav-link"}
+            onClick={onNavigate}
           >
             <span className="nav-label">{item.label}</span>
             <span className="nav-desc">{item.meta}</span>

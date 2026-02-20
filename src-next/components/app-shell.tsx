@@ -20,14 +20,38 @@ export function AppShell({ children }: AppShellProps) {
   const clearSession = useAuthStore((state) => state.clearSession);
   const router = useRouter();
   const [desktopWindowFrame, setDesktopWindowFrame] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     setDesktopWindowFrame(isDesktopWindowFrameAvailable());
   }, []);
 
+  useEffect(() => {
+    function handleWindowResize() {
+      if (window.innerWidth > 980) {
+        setMobileNavOpen(false);
+      }
+    }
+
+    handleWindowResize();
+    window.addEventListener("resize", handleWindowResize, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+    };
+  }, []);
+
   function handleSignOut() {
+    setMobileNavOpen(false);
     clearSession();
     router.replace("/login");
+  }
+
+  function closeMobileNav() {
+    setMobileNavOpen(false);
+  }
+
+  function toggleMobileNav() {
+    setMobileNavOpen((current) => !current);
   }
 
   function handleTopbarMouseDown(event: MouseEvent<HTMLElement>) {
@@ -52,12 +76,26 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
-    <div className="app-shell">
+    <div className={mobileNavOpen ? "app-shell mobile-nav-open" : "app-shell"}>
       <header
         className="app-topbar"
         data-tauri-drag-region={desktopWindowFrame ? "" : undefined}
         onMouseDown={handleTopbarMouseDown}
       >
+        <button
+          className="nav-drawer-toggle topbar-no-drag"
+          type="button"
+          aria-label={t("nav.aria")}
+          aria-controls="mobile-nav-drawer"
+          aria-expanded={mobileNavOpen}
+          onClick={toggleMobileNav}
+        >
+          <span className="nav-drawer-toggle-bars" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </button>
         <div className="topbar-brand">
           <p className="brand-title">{t("app.brandTitle")}</p>
           <p className="brand-subtitle">{t("app.brandSubtitle")}</p>
@@ -83,9 +121,17 @@ export function AppShell({ children }: AppShellProps) {
         </div>
       </header>
 
+      <button
+        aria-label={t("nav.aria")}
+        className="mobile-nav-backdrop"
+        onClick={closeMobileNav}
+        tabIndex={mobileNavOpen ? 0 : -1}
+        type="button"
+      />
+
       <div className="shell-body">
-        <aside className="shell-nav">
-          <AppNav />
+        <aside className="shell-nav" id="mobile-nav-drawer">
+          <AppNav onNavigate={closeMobileNav} />
         </aside>
         <main className="shell-content">{children}</main>
       </div>
