@@ -136,6 +136,58 @@ export interface RoomCreepSummary {
   ttl?: number;
 }
 
+export interface RoomObjectActionTarget {
+  x: number;
+  y: number;
+}
+
+export interface RoomObjectActionLog {
+  attacked?: RoomObjectActionTarget;
+  attack?: RoomObjectActionTarget;
+  build?: RoomObjectActionTarget;
+  harvest?: RoomObjectActionTarget;
+  heal?: RoomObjectActionTarget;
+  healed?: RoomObjectActionTarget;
+  power?: RoomObjectActionTarget;
+  rangedAttack?: RoomObjectActionTarget;
+  rangedHeal?: RoomObjectActionTarget;
+  repair?: RoomObjectActionTarget;
+  reserveController?: RoomObjectActionTarget;
+  runReaction?: RoomObjectActionTarget;
+  reverseReaction?: RoomObjectActionTarget;
+  transferEnergy?: RoomObjectActionTarget;
+  upgradeController?: RoomObjectActionTarget;
+}
+
+export interface RoomObjectSpawningSummary {
+  needTime?: number;
+  spawnTime?: number;
+}
+
+export interface RoomObjectBodyPartSummary {
+  type?: string;
+  hits?: number;
+  boost?: string;
+}
+
+export interface RoomObjectSaySummary {
+  text: string;
+  isPublic?: boolean;
+}
+
+export interface RoomObjectReservationSummary {
+  username?: string;
+  user?: string;
+  endTime?: number;
+  ticksToEnd?: number;
+}
+
+export interface RoomObjectEffectSummary {
+  effect: number;
+  power?: number;
+  endTime?: number;
+}
+
 export interface RoomObjectSummary {
   id: string;
   type: string;
@@ -146,6 +198,32 @@ export interface RoomObjectSummary {
   hits?: number;
   hitsMax?: number;
   ttl?: number;
+  user?: string;
+  store?: Record<string, number>;
+  storeCapacity?: number | Record<string, number>;
+  storeCapacityResource?: Record<string, number>;
+  energy?: number;
+  energyCapacity?: number;
+  level?: number;
+  progress?: number;
+  progressTotal?: number;
+  ageTime?: number;
+  decayTime?: number;
+  destroyTime?: number;
+  depositType?: string;
+  mineralType?: string;
+  body?: RoomObjectBodyPartSummary[];
+  say?: RoomObjectSaySummary;
+  reservation?: RoomObjectReservationSummary;
+  upgradeBlocked?: number;
+  safeMode?: number;
+  isPowerEnabled?: boolean;
+  spawning?: RoomObjectSpawningSummary;
+  cooldownTime?: number;
+  isPublic?: boolean;
+  actionLog?: RoomObjectActionLog;
+  userId?: string;
+  effects?: RoomObjectEffectSummary[];
 }
 
 export interface RoomDetailSnapshot {
@@ -157,6 +235,7 @@ export interface RoomDetailSnapshot {
   energyAvailable?: number;
   energyCapacity?: number;
   terrainEncoded?: string;
+  gameTime?: number;
   sources: RoomSourceSummary[];
   minerals: RoomMineralSummary[];
   structures: RoomStructureSummary[];

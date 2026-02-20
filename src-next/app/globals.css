@@ -1532,7 +1532,8 @@ a {
 }
 
 .room-detail-panel .dashboard-header {
-  align-items: center;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 8px;
 }
 
@@ -1541,14 +1542,37 @@ a {
   letter-spacing: 0.02em;
 }
 
-.room-detail-panel .header-actions {
-  gap: 6px;
+.room-detail-nav-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 150px auto;
+  gap: 8px;
+  width: min(760px, 100%);
 }
 
-.room-detail-panel .ghost-button,
-.room-detail-panel .secondary-button {
-  padding: 5px 8px;
-  font-size: 0.68rem;
+.room-detail-nav-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text-main);
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.room-detail-nav-input:focus {
+  border-color: var(--accent);
+}
+
+.room-detail-nav-input-shard {
+  text-transform: lowercase;
+}
+
+.room-detail-nav-button {
+  min-height: 36px;
+  padding: 7px 12px;
+  white-space: nowrap;
 }
 
 .room-detail-map-wrap {
@@ -1560,6 +1584,13 @@ a {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+@media (max-width: 820px) {
+  .room-detail-nav-form {
+    grid-template-columns: 1fr 1fr auto;
+    width: 100%;
+  }
 }
 
 .room-game-map {
@@ -1675,6 +1706,29 @@ a {
   place-items: center;
   color: var(--text-soft);
   font-size: 0.74rem;
+}
+
+.room-game-map-fallback-panel {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  max-width: min(92%, 520px);
+  padding: 12px 14px;
+  background: rgba(5, 9, 15, 0.84);
+  border: 1px solid rgba(133, 165, 226, 0.28);
+  border-radius: 10px;
+}
+
+.room-game-map-fallback-panel p {
+  margin: 0;
+}
+
+.room-game-map-fallback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
 }
 
 .room-official-map-host {

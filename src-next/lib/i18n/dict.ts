@@ -21,7 +21,7 @@ const zh = {
   "common.lastFetch": "最近拉取",
 
   "nav.aria": "主导航",
-  "nav.userLabel": "用户数据",
+  "nav.userLabel": "用户",
   "nav.userDesc": "查看账号信息与房间缩略图。",
   "nav.roomsLabel": "房间",
   "nav.roomsDesc": "搜索房间并查看可视化地图详情。",
@@ -63,7 +63,7 @@ const zh = {
   "auth.loading": "正在加载会话...",
   "auth.redirectingToLogin": "正在跳转到登录页...",
 
-  "dashboard.title": "用户数据",
+  "dashboard.title": "用户",
   "dashboard.subtitle": "{username} @ {baseUrl}",
   "dashboard.refreshInterval": "刷新间隔",
   "dashboard.lastFetch": "最后拉取",
@@ -107,6 +107,12 @@ const zh = {
   "settings.languageHint": "切换后立即生效并自动保存。",
   "settings.langZh": "中文",
   "settings.langEn": "English",
+  "settings.mapRendererTitle": "地图渲染器",
+  "settings.mapRendererHint": "在官方渲染风格与优化渲染性能之间切换。",
+  "settings.mapRendererOfficial": "官方渲染器",
+  "settings.mapRendererOptimized": "优化渲染器",
+  "settings.mapRendererAutoFallbackNotice": "官方渲染器失败时会在当前页面自动重试安全模式，不会全局切换到优化渲染器。",
+  "settings.mapRendererDefaultOfficialHint": "Default for new sessions is Official Renderer.",
   "settings.serverTitle": "服务器管理",
   "settings.serverName": "服务器名称",
   "settings.serverUrl": "服务器地址",
@@ -156,7 +162,7 @@ const zh = {
   "rooms.loading": "正在加载房间数据...",
   "rooms.openRankings": "打开排行榜",
   "rooms.searchLabel": "房间名",
-  "rooms.openDetail": "查看详情",
+  "rooms.openDetail": "查看房间",
   "rooms.searchHint": "请输入有效房间名（如 W8N3）。",
   "rooms.loginToOpenDetail": "登录后可打开房间详情。",
   "rooms.detailTitle": "房间详情",
@@ -298,6 +304,12 @@ const en: Record<TranslationKey, string> = {
   "settings.languageHint": "Changes apply immediately and persist.",
   "settings.langZh": "中文",
   "settings.langEn": "English",
+  "settings.mapRendererTitle": "Map Renderer",
+  "settings.mapRendererHint": "Switch between official visual style and optimized performance rendering.",
+  "settings.mapRendererOfficial": "Official Renderer",
+  "settings.mapRendererOptimized": "Optimized Renderer",
+  "settings.mapRendererAutoFallbackNotice": "Official renderer failures retry in per-page safe mode and do not auto-switch globally to optimized renderer.",
+  "settings.mapRendererDefaultOfficialHint": "Default for new sessions is Official Renderer.",
   "settings.serverTitle": "Server Management",
   "settings.serverName": "Server Name",
   "settings.serverUrl": "Server URL",
@@ -347,7 +359,7 @@ const en: Record<TranslationKey, string> = {
   "rooms.loading": "Loading room data...",
   "rooms.openRankings": "Open rankings",
   "rooms.searchLabel": "Room Name",
-  "rooms.openDetail": "Open detail",
+  "rooms.openDetail": "Open room",
   "rooms.searchHint": "Enter a valid room name (e.g., W8N3).",
   "rooms.loginToOpenDetail": "Sign in to open room detail.",
   "rooms.detailTitle": "Room Detail",
@@ -386,6 +398,8 @@ export const messages: Record<Locale, Record<TranslationKey, string>> = {
 };
 
 export const defaultLocale: Locale = "zh-CN";
+
+
 
 
 

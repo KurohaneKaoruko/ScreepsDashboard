@@ -6,7 +6,11 @@ import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
 import { fetchAllianceFullNameByPlayer } from "../lib/screeps/alliances";
 import { normalizeBaseUrl } from "../lib/screeps/request";
-import { fetchDashboardSnapshot } from "../lib/screeps/dashboard";
+import {
+  fetchDashboardRoomObjects,
+  fetchDashboardSnapshot,
+  toDashboardRoomKey,
+} from "../lib/screeps/dashboard";
 import {
   ScreepsRealtimeClient,
   type ScreepsRealtimeEvent,
@@ -21,11 +25,14 @@ import {
   toRoomMapOverlayKey,
   type RoomMapOverlay,
 } from "../lib/screeps/room-map-realtime";
+import type { RoomObjectSummary } from "../lib/screeps/types";
 import { useAuthStore } from "../stores/auth-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { MetricCell } from "./metric-cell";
 import { CircularProgress } from "./circular-progress";
 import { TerrainThumbnail } from "./terrain-thumbnail";
+
+const EMPTY_ROOM_THUMBNAILS: ReadonlyArray<{ name: string; shard?: string }> = [];
 
 function formatNumber(
   value: number | undefined,
@@ -216,6 +223,7 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
   const [ringSize, setRingSize] = useState(114);
   const [runtimeMetrics, setRuntimeMetrics] = useState<RuntimeMetricsPatch>({});
   const [roomMapOverlays, setRoomMapOverlays] = useState<Record<string, RoomMapOverlay>>({});
+  const [roomObjectsByKey, setRoomObjectsByKey] = useState<Record<string, RoomObjectSummary[]>>({});
   const [collapsedShardMap, setCollapsedShardMap] = useState<Record<string, boolean>>({});
 
   if (!session) {
@@ -255,7 +263,7 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
     [profile?.avatarUrl, profile?.username, session.baseUrl, session.username]
   );
   const avatarSrc = avatarCandidates[avatarCandidateIndex];
-  const roomThumbnails = data?.roomThumbnails ?? [];
+  const roomThumbnails = data?.roomThumbnails ?? EMPTY_ROOM_THUMBNAILS;
   const runtimeRealtimeChannels = useMemo(
     () => buildRuntimeChannels(session.username, profile?.username, profile?.userId),
     [profile?.userId, profile?.username, session.username]
@@ -266,6 +274,10 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
         .map((room) => `${room.shard ?? "unknown"}/${room.name}`)
         .sort()
         .join("|"),
+    [roomThumbnails]
+  );
+  const roomObjectsSubscriptionKey = useMemo(
+    () => roomThumbnails.map((room) => toDashboardRoomKey(room.name, room.shard)).sort().join("|"),
     [roomThumbnails]
   );
   const roomMapRealtimeChannels = useMemo(() => {
@@ -392,6 +404,56 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
     setShowDelayedError(false);
     return undefined;
   }, [data, error, isLoading, isValidating]);
+
+  useEffect(() => {
+    if (!roomObjectsSubscriptionKey) {
+      setRoomObjectsByKey((current) => (Object.keys(current).length === 0 ? current : {}));
+      return;
+    }
+
+    const activeRoomKeys = new Set(
+      roomThumbnails.map((room) => toDashboardRoomKey(room.name, room.shard))
+    );
+    setRoomObjectsByKey((current) => {
+      const next: Record<string, RoomObjectSummary[]> = {};
+      let changed = false;
+      for (const [key, value] of Object.entries(current)) {
+        if (activeRoomKeys.has(key)) {
+          next[key] = value;
+          continue;
+        }
+        changed = true;
+      }
+
+      if (!changed) {
+        return current;
+      }
+      return next;
+    });
+
+    let cancelled = false;
+    void fetchDashboardRoomObjects(session, roomThumbnails)
+      .then((fetched) => {
+        if (cancelled || Object.keys(fetched).length === 0) {
+          return;
+        }
+        setRoomObjectsByKey((current) => ({
+          ...current,
+          ...fetched,
+        }));
+      })
+      .catch(() => {
+        // Keep terrain thumbnails available even if object requests fail.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    roomObjectsSubscriptionKey,
+    roomThumbnails,
+    session,
+  ]);
 
   useEffect(() => {
     setAvatarCandidateIndex(0);
@@ -613,6 +675,8 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
                         {group.rooms.map((room) => {
                           const roomOverlay = pickRoomMapOverlay(roomMapOverlays, room.name, room.shard);
                           const roomKey = room.shard ? `${room.shard}/${room.name}` : room.name;
+                          const roomObjectKey = toDashboardRoomKey(room.name, room.shard);
+                          const roomObjects = roomObjectsByKey[roomObjectKey];
                           const roomSearchParams = new URLSearchParams({
                             name: room.name,
                           });
@@ -634,6 +698,7 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
                                 roomName={room.name}
                                 size={150}
                                 mapOverlay={roomOverlay}
+                                roomObjects={roomObjects}
                               />
                             </Link>
                           );

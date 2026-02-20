@@ -3,9 +3,10 @@
 import { type FormEvent, useMemo, useState } from "react";
 import type { Locale } from "../lib/i18n/dict";
 import { useI18n } from "../lib/i18n/use-i18n";
-import { useSettingsStore } from "../stores/settings-store";
+import { useSettingsStore, type MapRendererMode } from "../stores/settings-store";
 
 const AVAILABLE_LOCALES: Locale[] = ["zh-CN", "en-US"];
+const MAP_RENDERER_MODES: readonly MapRendererMode[] = ["official", "optimized"];
 
 export function SettingsPanel() {
   const { locale, setLocale, t } = useI18n();
@@ -14,10 +15,12 @@ export function SettingsPanel() {
   const accounts = useSettingsStore((state) => state.accounts);
   const activeServerId = useSettingsStore((state) => state.activeServerId);
   const activeAccountId = useSettingsStore((state) => state.activeAccountId);
+  const mapRendererMode = useSettingsStore((state) => state.mapRendererMode);
 
   const addAccount = useSettingsStore((state) => state.addAccount);
   const removeAccount = useSettingsStore((state) => state.removeAccount);
   const setActiveAccountId = useSettingsStore((state) => state.setActiveAccountId);
+  const setMapRendererMode = useSettingsStore((state) => state.setMapRendererMode);
 
   const [accountLabel, setAccountLabel] = useState("");
   const [accountUsername, setAccountUsername] = useState("");
@@ -63,6 +66,33 @@ export function SettingsPanel() {
                 key={option}
                 className={checked ? "language-option active" : "language-option"}
                 onClick={() => setLocale(option)}
+                type="button"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </article>
+
+      <article className="card">
+        <h2>{t("settings.mapRendererTitle")}</h2>
+        <p className="hint-text">{t("settings.mapRendererHint")}</p>
+        <p className="hint-text">{t("settings.mapRendererAutoFallbackNotice")}</p>
+        <p className="hint-text">{t("settings.mapRendererDefaultOfficialHint")}</p>
+        <div className="language-grid">
+          {MAP_RENDERER_MODES.map((mode) => {
+            const checked = mode === mapRendererMode;
+            const label =
+              mode === "official"
+                ? t("settings.mapRendererOfficial")
+                : t("settings.mapRendererOptimized");
+
+            return (
+              <button
+                key={mode}
+                className={checked ? "language-option active" : "language-option"}
+                onClick={() => setMapRendererMode(mode)}
                 type="button"
               >
                 {label}

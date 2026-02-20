@@ -1,7 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
 import { fetchRoomDetailSnapshot } from "../lib/screeps/room-detail";
@@ -52,11 +61,14 @@ function buildRoomRealtimeChannels(roomName: string, shard?: string): string[] {
 
 export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
   const { t } = useI18n();
+  const router = useRouter();
   const session = useAuthStore((state) => state.session);
   const lastRealtimeMutateAt = useRef(0);
 
   const normalizedName = useMemo(() => roomName.trim().toUpperCase(), [roomName]);
   const normalizedShard = useMemo(() => normalizeShardValue(roomShard), [roomShard]);
+  const [roomInput, setRoomInput] = useState(normalizedName);
+  const [shardInput, setShardInput] = useState(normalizedShard ?? "");
 
   const swrKey =
     session && normalizedName
@@ -122,12 +134,59 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
   const roomObjects = data?.objects ?? [];
   const roomLabel = data?.roomName ?? normalizedName;
   const shardLabel = data?.shard ?? normalizedShard;
-  const roomDisplayLabel = roomLabel
-    ? shardLabel
-      ? `${roomLabel} @ ${shardLabel}`
-      : roomLabel
-    : "";
   const hasMap = Boolean(session && data);
+
+  useEffect(() => {
+    setRoomInput(roomLabel ?? "");
+  }, [roomLabel]);
+
+  useEffect(() => {
+    setShardInput(shardLabel ?? "");
+  }, [shardLabel]);
+
+  const navigateToRoom = useCallback(() => {
+      const nextRoomName = roomInput.trim().toUpperCase();
+      if (!nextRoomName) {
+        return false;
+      }
+
+      const nextShard = shardInput.trim().toLowerCase();
+      const searchParams = new URLSearchParams({
+        name: nextRoomName,
+      });
+      if (nextShard) {
+        searchParams.set("shard", nextShard);
+      }
+
+      const currentShard = roomShard?.trim().toLowerCase() ?? "";
+      if (nextRoomName === normalizedName && nextShard === currentShard) {
+        return false;
+      }
+
+      router.push(`/rooms?${searchParams.toString()}`);
+      return true;
+    },
+    [normalizedName, roomInput, roomShard, router, shardInput]
+  );
+
+  const handleNavigateRoom = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      navigateToRoom();
+    },
+    [navigateToRoom]
+  );
+
+  const handleNavInputKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+      event.preventDefault();
+      navigateToRoom();
+    },
+    [navigateToRoom]
+  );
 
   return (
     <section
@@ -136,25 +195,31 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
       }`}
     >
       <header className="dashboard-header">
-        <div>
-          <h1 className="page-title">
-            {t("rooms.detailTitle")}
-            {roomDisplayLabel ? `: ${roomDisplayLabel}` : ""}
-          </h1>
-        </div>
-
-        <div className="header-actions">
-          <Link className="ghost-button" href="/rooms">
-            {t("rooms.title")}
-          </Link>
-          <button
-            className="secondary-button"
-            onClick={() => void mutate()}
-            disabled={!normalizedName || !session}
-          >
-            {t("common.refreshNow")}
+        <form className="room-detail-nav-form" onSubmit={handleNavigateRoom}>
+          <input
+            className="room-detail-nav-input"
+            value={roomInput}
+            onChange={(event) => setRoomInput(event.target.value.toUpperCase())}
+            onKeyDown={handleNavInputKeyDown}
+            placeholder={t("rooms.searchLabel")}
+            aria-label={t("rooms.searchLabel")}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <input
+            className="room-detail-nav-input room-detail-nav-input-shard"
+            value={shardInput}
+            onChange={(event) => setShardInput(event.target.value.toLowerCase())}
+            onKeyDown={handleNavInputKeyDown}
+            placeholder="shard"
+            aria-label="shard"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button className="secondary-button room-detail-nav-button" type="submit">
+            {t("rooms.openDetail")}
           </button>
-        </div>
+        </form>
       </header>
 
       {!session ? (
@@ -181,14 +246,13 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
         </div>
       ) : null}
 
-      {session && !normalizedName ? <p className="hint-text">{t("rooms.searchHint")}</p> : null}
-
       {session && data ? (
         <div className="room-detail-map-wrap">
           <RoomGameplayMap
             encoded={data.terrainEncoded}
             roomName={roomLabel}
             roomShard={shardLabel}
+            gameTime={data.gameTime}
             roomObjects={roomObjects}
           />
         </div>

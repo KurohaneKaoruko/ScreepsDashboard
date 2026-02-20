@@ -117,6 +117,250 @@ function firstNumber(values: unknown[]): number | undefined {
   return undefined;
 }
 
+function asBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (value === 1) {
+      return true;
+    }
+    if (value === 0) {
+      return false;
+    }
+    return undefined;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") {
+      return true;
+    }
+    if (normalized === "false" || normalized === "0") {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+function toNumericRecord(value: unknown): Record<string, number> | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const out: Record<string, number> = {};
+  for (const [key, rawValue] of Object.entries(record)) {
+    const parsed = asNumber(rawValue);
+    if (parsed !== undefined) {
+      out[key] = parsed;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function parseStoreCapacity(
+  value: unknown
+): number | Record<string, number> | undefined {
+  const direct = asNumber(value);
+  if (direct !== undefined) {
+    return direct;
+  }
+  return toNumericRecord(value);
+}
+
+function parseActionTarget(value: unknown): { x: number; y: number } | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const x = asNumber(record.x);
+  const y = asNumber(record.y);
+  if (x === undefined || y === undefined) {
+    return undefined;
+  }
+
+  return { x, y };
+}
+
+function parseActionLog(
+  value: unknown
+): RoomObjectSummary["actionLog"] | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const keys = [
+    "attacked",
+    "attack",
+    "build",
+    "harvest",
+    "heal",
+    "healed",
+    "power",
+    "rangedAttack",
+    "rangedHeal",
+    "repair",
+    "reserveController",
+    "runReaction",
+    "reverseReaction",
+    "transferEnergy",
+    "upgradeController",
+  ] as const;
+  const out: NonNullable<RoomObjectSummary["actionLog"]> = {};
+  let hasAny = false;
+  for (const key of keys) {
+    const target = parseActionTarget(record[key]);
+    if (!target) {
+      continue;
+    }
+    out[key] = target;
+    hasAny = true;
+  }
+
+  if (!hasAny) {
+    return undefined;
+  }
+
+  return out;
+}
+
+function parseSpawning(
+  value: unknown
+): RoomObjectSummary["spawning"] | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const needTime = firstNumber([record.needTime, record.remainingTime]);
+  const spawnTime = firstNumber([record.spawnTime, record.endTime, record.time]);
+  if (needTime === undefined && spawnTime === undefined) {
+    return undefined;
+  }
+
+  return {
+    needTime,
+    spawnTime,
+  };
+}
+
+function parseEffects(
+  value: unknown
+): RoomObjectSummary["effects"] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const effects: NonNullable<RoomObjectSummary["effects"]> = [];
+  for (const item of value) {
+    const record = asRecord(item);
+    if (!record) {
+      continue;
+    }
+
+    const effect = firstNumber([record.effect, record.id]);
+    if (effect === undefined) {
+      continue;
+    }
+
+    effects.push({
+      effect,
+      power: asNumber(record.power),
+      endTime: firstNumber([record.endTime, record.ticksRemaining, record.time]),
+    });
+  }
+
+  return effects.length > 0 ? effects : undefined;
+}
+
+function parseBody(value: unknown): RoomObjectSummary["body"] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const body: NonNullable<RoomObjectSummary["body"]> = [];
+  for (const item of value) {
+    if (typeof item === "string") {
+      const type = asString(item);
+      if (!type) {
+        continue;
+      }
+      body.push({ type });
+      continue;
+    }
+
+    const record = asRecord(item);
+    if (!record) {
+      continue;
+    }
+
+    const type = firstString([record.type, record.part]);
+    const hits = asNumber(record.hits);
+    const boost = firstString([record.boost]);
+    if (!type && hits === undefined && !boost) {
+      continue;
+    }
+    body.push({
+      type,
+      hits,
+      boost,
+    });
+  }
+
+  return body.length > 0 ? body : undefined;
+}
+
+function parseSay(value: unknown): RoomObjectSummary["say"] | undefined {
+  if (typeof value === "string") {
+    const text = asString(value);
+    if (!text) {
+      return undefined;
+    }
+    return { text };
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const text = firstString([record.text, record.message, record.say]);
+  if (!text) {
+    return undefined;
+  }
+
+  return {
+    text,
+    isPublic: asBoolean(record.isPublic ?? record.public),
+  };
+}
+
+function parseReservation(
+  value: unknown
+): RoomObjectSummary["reservation"] | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const username = firstString([record.username, record.name]);
+  const user = firstString([record.user, record.userId, record.id, record._id]);
+  const endTime = firstNumber([record.endTime, record.time]);
+  const ticksToEnd = firstNumber([record.ticksToEnd, record.ticksRemaining, record.ttl]);
+  if (!username && !user && endTime === undefined && ticksToEnd === undefined) {
+    return undefined;
+  }
+
+  return {
+    username,
+    user,
+    endTime,
+    ticksToEnd,
+  };
+}
+
 function normalizeRoomCandidate(value: unknown): string | undefined {
   const text = asString(value);
   if (!text) {
@@ -402,8 +646,21 @@ function resolveObjectType(record: Record<string, unknown>): string | undefined 
     return directType;
   }
 
+  if (firstNumber([record.progress, record.progressTotal]) !== undefined) {
+    return "constructionSite";
+  }
+
+  if (firstString([record.depositType])) {
+    return "deposit";
+  }
+
   if (firstString([record.mineralType])) {
     return "mineral";
+  }
+
+  const resourceType = firstString([record.resourceType, record.resource]);
+  if (resourceType === "energy" && firstNumber([record.amount, record.energy]) !== undefined) {
+    return "energy";
   }
 
   if (
@@ -413,6 +670,98 @@ function resolveObjectType(record: Record<string, unknown>): string | undefined 
     return "creep";
   }
 
+  return undefined;
+}
+
+function buildObjectSummaryFromRecord(
+  record: Record<string, unknown>,
+  objectId: string,
+  type: string,
+  x: number,
+  y: number,
+  resolvedOwner: string | undefined,
+  resolvedName: string | undefined
+): RoomObjectSummary {
+  const controllerRecord = asRecord(record.controller);
+  const store = toNumericRecord(record.store);
+  const storeCapacity = parseStoreCapacity(record.storeCapacity);
+  const storeCapacityResource = toNumericRecord(record.storeCapacityResource);
+  const energy = firstNumber([record.energy, store?.energy]);
+  const objectEnergyCapacity = firstNumber([
+    record.energyCapacity,
+    storeCapacityResource?.energy,
+    typeof storeCapacity === "number" ? storeCapacity : storeCapacity?.energy,
+  ]);
+  const reservation = parseReservation(record.reservation ?? controllerRecord?.reservation);
+
+  return {
+    id: objectId,
+    type,
+    x,
+    y,
+    owner: resolvedOwner,
+    name: resolvedName,
+    user: firstString([record.user, record.userId, asRecord(record.owner)?.user]),
+    hits: asNumber(record.hits),
+    hitsMax: asNumber(record.hitsMax),
+    ttl: firstNumber([record.ticksToLive, record.ttl]),
+    store,
+    storeCapacity,
+    storeCapacityResource,
+    energy,
+    energyCapacity: objectEnergyCapacity,
+    level: asNumber(record.level),
+    progress: firstNumber([record.progress]),
+    progressTotal: firstNumber([record.progressTotal, record.total]),
+    ageTime: firstNumber([record.ageTime]),
+    decayTime: firstNumber([record.decayTime, record.decay]),
+    destroyTime: firstNumber([record.destroyTime, record.destructionTime]),
+    depositType: firstString([record.depositType]),
+    mineralType: firstString([record.mineralType]),
+    body: parseBody(record.body ?? record.bodyParts ?? record.parts),
+    say: parseSay(record.say ?? record.message),
+    reservation,
+    upgradeBlocked: firstNumber([record.upgradeBlocked, controllerRecord?.upgradeBlocked]),
+    safeMode: firstNumber([record.safeMode, controllerRecord?.safeMode]),
+    isPowerEnabled: asBoolean(record.isPowerEnabled ?? controllerRecord?.isPowerEnabled),
+    spawning: parseSpawning(record.spawning),
+    cooldownTime: firstNumber([record.cooldownTime, record.cooldown, record.nextRegenerationTime]),
+    isPublic: asBoolean(record.isPublic),
+    actionLog: parseActionLog(record.actionLog ?? record.actions),
+    userId: firstString([record.userId, asRecord(record.owner)?.user, record.user]),
+    effects: parseEffects(record.effects),
+  };
+}
+
+function extractGameTimeFromPayload(payload: unknown): number | undefined {
+  const root = asRecord(payload);
+  if (!root) {
+    return undefined;
+  }
+
+  return firstNumber([
+    root.gameTime,
+    root.time,
+    root.tick,
+    asRecord(root.data)?.gameTime,
+    asRecord(root.data)?.time,
+    asRecord(root.data)?.tick,
+    asRecord(root.result)?.gameTime,
+    asRecord(root.result)?.time,
+    asRecord(root.result)?.tick,
+    asRecord(root.message)?.gameTime,
+    asRecord(root.message)?.time,
+    asRecord(root.message)?.tick,
+  ]);
+}
+
+function resolveGameTime(payloads: unknown[]): number | undefined {
+  for (const payload of payloads) {
+    const value = extractGameTimeFromPayload(payload);
+    if (value !== undefined) {
+      return value;
+    }
+  }
   return undefined;
 }
 
@@ -461,21 +810,16 @@ function parseFallbackEntities(roomName: string, payloads: unknown[]): ParsedEnt
     const objectId = firstString([record._id, record.id, record.name]) ?? `${type}:${x}:${y}`;
     const resolvedOwner = firstString([record.owner, record.user]);
     const resolvedName = firstString([record.name, record.creepName]);
-    const hits = asNumber(record.hits);
-    const hitsMax = asNumber(record.hitsMax);
-    const ttl = firstNumber([record.ticksToLive, record.ttl]);
-
-    objectMap.set(`${objectId}:${type}:${x}:${y}`, {
-      id: objectId,
+    const objectSummary = buildObjectSummaryFromRecord(
+      record,
+      objectId,
       type,
       x,
       y,
-      owner: resolvedOwner,
-      name: resolvedName,
-      hits,
-      hitsMax,
-      ttl,
-    });
+      resolvedOwner,
+      resolvedName
+    );
+    objectMap.set(`${objectId}:${type}:${x}:${y}`, objectSummary);
 
     if (type === "source") {
       sourceMap.set(`${x}:${y}`, { x, y });
@@ -492,32 +836,37 @@ function parseFallbackEntities(roomName: string, payloads: unknown[]): ParsedEnt
     }
 
     if (type === "controller") {
-      owner = firstString([owner, record.owner, record.user]);
-      controllerLevel = firstNumber([controllerLevel, record.level]);
+      owner = firstString([
+        owner,
+        objectSummary.owner,
+        objectSummary.user,
+        objectSummary.reservation?.username,
+      ]);
+      controllerLevel = firstNumber([controllerLevel, objectSummary.level, record.level]);
       continue;
     }
 
     if (type === "creep" || type === "powerCreep") {
-      const creepName = resolvedName ?? `${type}-${x}-${y}`;
+      const creepName = objectSummary.name ?? `${type}-${x}-${y}`;
       creepMap.set(creepName, {
         name: creepName,
         role: firstString([record.role, asRecord(record.memory)?.role]),
         x,
         y,
-        ttl,
+        ttl: objectSummary.ttl,
       });
       continue;
     }
 
     if (isStructureType(type)) {
-      const summary: RoomStructureSummary = {
+      const structureSummary: RoomStructureSummary = {
         type,
         x,
         y,
-        hits,
-        hitsMax,
+        hits: objectSummary.hits,
+        hitsMax: objectSummary.hitsMax,
       };
-      structureMap.set(`${type}:${x}:${y}`, summary);
+      structureMap.set(`${type}:${x}:${y}`, structureSummary);
 
       if (type === "spawn" || type === "extension") {
         const store = asRecord(record.store) ?? {};
@@ -605,21 +954,16 @@ function parseRoomObjectEntities(
         firstString([record._id, record.id]) ?? `${type}:${x}:${y}:${objectMap.size + 1}`;
       const resolvedOwner = resolveOwnerName(record, userDirectory);
       const resolvedName = firstString([record.name, record.creepName]);
-      const hits = asNumber(record.hits);
-      const hitsMax = asNumber(record.hitsMax);
-      const ttl = firstNumber([record.ticksToLive, record.ttl]);
-
-      objectMap.set(`${objectId}:${type}:${x}:${y}`, {
-        id: objectId,
+      const objectSummary = buildObjectSummaryFromRecord(
+        record,
+        objectId,
         type,
         x,
         y,
-        owner: resolvedOwner,
-        name: resolvedName,
-        hits,
-        hitsMax,
-        ttl,
-      });
+        resolvedOwner,
+        resolvedName
+      );
+      objectMap.set(`${objectId}:${type}:${x}:${y}`, objectSummary);
 
       if (type === "source") {
         sourceMap.set(`${x}:${y}`, { x, y });
@@ -636,19 +980,24 @@ function parseRoomObjectEntities(
       }
 
       if (type === "controller") {
-        owner = firstString([owner, resolvedOwner]);
-        controllerLevel = firstNumber([controllerLevel, record.level]);
+        owner = firstString([
+          owner,
+          objectSummary.owner,
+          objectSummary.user,
+          objectSummary.reservation?.username,
+        ]);
+        controllerLevel = firstNumber([controllerLevel, objectSummary.level, record.level]);
         continue;
       }
 
       if (type === "creep" || type === "powerCreep") {
-        const creepName = resolvedName ?? `${type}-${x}-${y}`;
+        const creepName = objectSummary.name ?? `${type}-${x}-${y}`;
         creepMap.set(creepName, {
           name: creepName,
           role: firstString([record.role, asRecord(record.memory)?.role]),
           x,
           y,
-          ttl,
+          ttl: objectSummary.ttl,
         });
         continue;
       }
@@ -658,8 +1007,8 @@ function parseRoomObjectEntities(
           type,
           x,
           y,
-          hits,
-          hitsMax,
+          hits: objectSummary.hits,
+          hitsMax: objectSummary.hitsMax,
         });
 
         if (type === "spawn" || type === "extension") {
@@ -1082,6 +1431,13 @@ export async function fetchRoomDetailSnapshot(
       tryRoomObjects(session.baseUrl, session.token, session.username, roomName, shard),
       tryUserRooms(session),
     ]);
+  const gameTime = resolveGameTime([
+    terrainPayload,
+    mapStatsPayload,
+    overviewPayload,
+    roomObjectsPayload,
+    roomsPayload,
+  ]);
 
   const core = parseRoomCore(roomName, [
     mapStatsPayload,
@@ -1136,6 +1492,7 @@ export async function fetchRoomDetailSnapshot(
     energyCapacity:
       parsedRoomObjects.energyCapacity ?? fallbackEntities.energyCapacity ?? core.energyCapacity,
     terrainEncoded,
+    gameTime,
     sources,
     minerals,
     structures,

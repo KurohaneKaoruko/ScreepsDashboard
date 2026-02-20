@@ -18,14 +18,18 @@ export interface AccountProfile {
   serverId: string;
 }
 
+export type MapRendererMode = "official" | "optimized";
+
 interface SettingsState {
   refreshIntervalMs: number;
   servers: ServerProfile[];
   accounts: AccountProfile[];
   activeServerId: string | null;
   activeAccountId: string | null;
+  mapRendererMode: MapRendererMode;
 
   setRefreshIntervalMs: (intervalMs: number) => void;
+  setMapRendererMode: (mode: MapRendererMode) => void;
 
   addServer: (name: string, baseUrl: string) => string;
   removeServer: (serverId: string) => void;
@@ -42,6 +46,7 @@ interface SettingsState {
 }
 
 const DEFAULT_REFRESH_INTERVAL_MS = 60_000;
+const DEFAULT_MAP_RENDERER_MODE: MapRendererMode = "official";
 
 function createId(prefix: string): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -64,8 +69,10 @@ export const useSettingsStore = create<SettingsState>()(
       accounts: [],
       activeServerId: defaultServer.id,
       activeAccountId: null,
+      mapRendererMode: DEFAULT_MAP_RENDERER_MODE,
 
       setRefreshIntervalMs: (intervalMs) => set({ refreshIntervalMs: intervalMs }),
+      setMapRendererMode: (mode) => set({ mapRendererMode: mode }),
 
       addServer: (name, baseUrl) => {
         const trimmedName = name.trim();

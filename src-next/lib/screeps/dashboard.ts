@@ -4,6 +4,7 @@ import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
 import type {
   DashboardSnapshot,
   QueryParams,
+  RoomObjectSummary,
   RoomSummary,
   RoomThumbnail,
   ScreepsRequest,
@@ -108,6 +109,15 @@ const ROOM_THUMBNAIL_CACHE = new Map<string, string>();
 const ROOM_THUMBNAIL_RETRY_AT = new Map<string, number>();
 const ROOM_THUMBNAIL_REQUEST_TIMESTAMPS: number[] = [];
 const ROOM_THUMBNAIL_FETCH_CURSOR = new Map<string, number>();
+const ROOM_OBJECTS_MAX_ATTEMPTS = 2;
+const ROOM_OBJECTS_RETRY_BASE_MS = 300;
+const ROOM_OBJECTS_RETRY_DELAY_MS = 18_000;
+const ROOM_OBJECTS_NON_TRANSIENT_RETRY_DELAY_MS = 60_000;
+const ROOM_OBJECTS_REQUEST_WINDOW_MS = 60_000;
+const ROOM_OBJECTS_REQUEST_LIMIT = 12;
+const ROOM_OBJECTS_CACHE = new Map<string, RoomObjectSummary[]>();
+const ROOM_OBJECTS_RETRY_AT = new Map<string, number>();
+const ROOM_OBJECTS_REQUEST_TIMESTAMPS: number[] = [];
 const ROOM_LEVEL_CACHE = new Map<string, number>();
 const ROOM_LEVEL_RETRY_AT = new Map<string, number>();
 const ROOM_LEVEL_RETRY_DELAY_MS = 30_000;
@@ -124,10 +134,19 @@ function wait(ms: number): Promise<void> {
   });
 }
 
+export function toDashboardRoomKey(roomName: string, shard?: string): string {
+  const normalizedRoom = roomName.trim().toUpperCase();
+  const normalizedShard = shard?.trim().toLowerCase() || "unknown";
+  return `${normalizedShard}:${normalizedRoom}`;
+}
+
 function buildRoomThumbnailKey(room: RoomSummary, baseUrl: string): string {
   const normalizedBase = normalizeBaseUrl(baseUrl).toLowerCase();
-  const shard = room.shard?.trim().toLowerCase() ?? "unknown";
-  return `${normalizedBase}|${shard}:${room.name.trim().toUpperCase()}`;
+  return `${normalizedBase}|${toDashboardRoomKey(room.name, room.shard)}`;
+}
+
+function buildRoomObjectsKey(room: RoomSummary, baseUrl: string): string {
+  return `${buildRoomThumbnailKey(room, baseUrl)}|objects`;
 }
 
 function buildRoomLevelKey(room: RoomSummary, baseUrl: string): string {
@@ -214,6 +233,48 @@ function scheduleRoomThumbnailRetry(baseUrl: string, room: RoomSummary, delayMs:
 
 function clearRoomThumbnailRetry(baseUrl: string, room: RoomSummary): void {
   ROOM_THUMBNAIL_RETRY_AT.delete(buildRoomThumbnailKey(room, baseUrl));
+}
+
+function pruneRoomObjectsRequestTimestamps(now: number): void {
+  while (ROOM_OBJECTS_REQUEST_TIMESTAMPS.length > 0) {
+    const oldest = ROOM_OBJECTS_REQUEST_TIMESTAMPS[0];
+    if (now - oldest < ROOM_OBJECTS_REQUEST_WINDOW_MS) {
+      break;
+    }
+    ROOM_OBJECTS_REQUEST_TIMESTAMPS.shift();
+  }
+}
+
+function reserveRoomObjectsRequestSlots(count: number): number {
+  if (count <= 0) {
+    return 0;
+  }
+
+  const now = Date.now();
+  pruneRoomObjectsRequestTimestamps(now);
+  const availableSlots = ROOM_OBJECTS_REQUEST_LIMIT - ROOM_OBJECTS_REQUEST_TIMESTAMPS.length;
+  if (availableSlots <= 0) {
+    return 0;
+  }
+
+  const grantedSlots = Math.min(count, availableSlots);
+  for (let index = 0; index < grantedSlots; index += 1) {
+    ROOM_OBJECTS_REQUEST_TIMESTAMPS.push(now);
+  }
+  return grantedSlots;
+}
+
+function canRetryRoomObjects(baseUrl: string, room: RoomSummary, now: number): boolean {
+  const retryAt = ROOM_OBJECTS_RETRY_AT.get(buildRoomObjectsKey(room, baseUrl));
+  return retryAt === undefined || retryAt <= now;
+}
+
+function scheduleRoomObjectsRetry(baseUrl: string, room: RoomSummary, delayMs: number): void {
+  ROOM_OBJECTS_RETRY_AT.set(buildRoomObjectsKey(room, baseUrl), Date.now() + delayMs);
+}
+
+function clearRoomObjectsRetry(baseUrl: string, room: RoomSummary): void {
+  ROOM_OBJECTS_RETRY_AT.delete(buildRoomObjectsKey(room, baseUrl));
 }
 
 function normalizeRoomName(value: string | undefined): string | undefined {
@@ -386,6 +447,192 @@ function collectPayloadCandidates(
   }
 
   return output;
+}
+
+function collectRoomObjectRecordsFromValue(
+  value: unknown,
+  sink: Record<string, unknown>[]
+): void {
+  if (value === null || value === undefined) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const record = asRecord(item);
+      if (record) {
+        sink.push(record);
+      }
+    }
+    return;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return;
+  }
+
+  const directX = asNumber(record.x);
+  const directY = asNumber(record.y);
+  if (directX !== undefined && directY !== undefined) {
+    sink.push(record);
+    return;
+  }
+
+  for (const [key, nested] of Object.entries(record)) {
+    const nestedRecord = asRecord(nested);
+    if (!nestedRecord) {
+      continue;
+    }
+
+    const nestedX = asNumber(nestedRecord.x);
+    const nestedY = asNumber(nestedRecord.y);
+    if (nestedX === undefined || nestedY === undefined) {
+      continue;
+    }
+
+    if (nestedRecord._id || nestedRecord.id) {
+      sink.push(nestedRecord);
+      continue;
+    }
+
+    sink.push({
+      ...nestedRecord,
+      _id: key,
+    });
+  }
+}
+
+function extractRoomObjectRecords(payload: unknown): Record<string, unknown>[] {
+  const root = asRecord(payload) ?? {};
+  const objectCandidates = [
+    root.objects,
+    root.roomObjects,
+    root.data,
+    root.result,
+    root.message,
+    asRecord(root.data)?.objects,
+    asRecord(root.result)?.objects,
+    asRecord(root.message)?.objects,
+    asRecord(root.data)?.roomObjects,
+    asRecord(root.result)?.roomObjects,
+    asRecord(root.message)?.roomObjects,
+  ];
+
+  const objectRecords: Record<string, unknown>[] = [];
+  for (const candidate of objectCandidates) {
+    collectRoomObjectRecordsFromValue(candidate, objectRecords);
+  }
+
+  if (objectRecords.length > 0) {
+    return objectRecords;
+  }
+
+  const fallbackCandidates = collectPayloadCandidates(payload, 6, 260);
+  return fallbackCandidates.filter((record) => {
+    const x = asNumber(record.x);
+    const y = asNumber(record.y);
+    return x !== undefined && y !== undefined;
+  });
+}
+
+function extractObjectRoomName(record: Record<string, unknown>): string | undefined {
+  const position = asRecord(record.pos);
+  return normalizeRoomName(
+    firstString([record.room, record.roomName, position?.roomName, position?.room])
+  );
+}
+
+function resolveRoomObjectType(record: Record<string, unknown>): string | undefined {
+  const directType = firstString([record.type, record.objectType, record.structureType]);
+  if (directType) {
+    return directType;
+  }
+
+  if (firstString([record.mineralType])) {
+    return "mineral";
+  }
+  if (firstString([record.depositType])) {
+    return "deposit";
+  }
+  if (firstNumber([record.progress, record.progressTotal]) !== undefined) {
+    return "constructionSite";
+  }
+  if (firstNumber([record.ticksToLive, record.ttl]) !== undefined) {
+    return "creep";
+  }
+
+  const resourceType = firstString([record.resourceType, record.resource]);
+  if (resourceType === "energy" && firstNumber([record.amount, record.energy]) !== undefined) {
+    return "energy";
+  }
+
+  return undefined;
+}
+
+function parseRoomObjectsForThumbnail(roomName: string, payload: unknown): RoomObjectSummary[] {
+  const normalizedRoomName = normalizeRoomName(roomName) ?? roomName.trim().toUpperCase();
+  const objectRecords = extractRoomObjectRecords(payload);
+  if (objectRecords.length === 0) {
+    return [];
+  }
+
+  const summaries = new Map<string, RoomObjectSummary>();
+  const maxObjects = 1_400;
+  for (const record of objectRecords) {
+    const x = asNumber(record.x);
+    const y = asNumber(record.y);
+    if (x === undefined || y === undefined || x < 0 || x > 49 || y < 0 || y > 49) {
+      continue;
+    }
+
+    const recordRoom = extractObjectRoomName(record);
+    if (recordRoom && recordRoom !== normalizedRoomName) {
+      continue;
+    }
+
+    const type = resolveRoomObjectType(record);
+    if (!type) {
+      continue;
+    }
+
+    const ownerRecord = asRecord(record.owner);
+    const id =
+      firstString([record._id, record.id]) ?? `${type}:${x}:${y}:${summaries.size + 1}`;
+    const objectSummary: RoomObjectSummary = {
+      id,
+      type,
+      x,
+      y,
+      owner: firstString([
+        record.owner,
+        ownerRecord?.username,
+        ownerRecord?.name,
+        ownerRecord?.user,
+      ]),
+      name: firstString([record.name, record.creepName]),
+      hits: asNumber(record.hits),
+      hitsMax: asNumber(record.hitsMax),
+      ttl: firstNumber([record.ticksToLive, record.ttl]),
+      user: firstString([record.user, ownerRecord?.user, record.userId]),
+      userId: firstString([record.userId, record.user, ownerRecord?.user]),
+      energy: firstNumber([record.energy]),
+      energyCapacity: firstNumber([record.energyCapacity]),
+      level: asNumber(record.level),
+      progress: firstNumber([record.progress]),
+      progressTotal: firstNumber([record.progressTotal, record.total]),
+      mineralType: firstString([record.mineralType]),
+      depositType: firstString([record.depositType]),
+    };
+
+    const key = `${type}:${x}:${y}:${id}`;
+    summaries.set(key, objectSummary);
+    if (summaries.size >= maxObjects) {
+      break;
+    }
+  }
+
+  return [...summaries.values()];
 }
 
 function scorePayloadCandidate(record: Record<string, unknown>, keys: readonly string[]): number {
@@ -1646,6 +1893,142 @@ async function fetchRoomThumbnail(
   return toFallbackThumbnail(room);
 }
 
+interface RoomObjectsRequestCandidate {
+  endpoint: string;
+  method: ScreepsMethod;
+  query?: QueryParams;
+  body?: unknown;
+}
+
+function buildRoomObjectsRequests(room: RoomSummary): RoomObjectsRequestCandidate[] {
+  const requests: RoomObjectsRequestCandidate[] = [];
+  const shard = room.shard?.trim();
+
+  if (shard) {
+    requests.push({
+      endpoint: "/api/game/room-objects",
+      method: "GET",
+      query: { room: room.name, shard },
+    });
+    requests.push({
+      endpoint: "/api/game/room-objects",
+      method: "POST",
+      body: { room: room.name, shard },
+    });
+  }
+
+  requests.push({
+    endpoint: "/api/game/room-objects",
+    method: "GET",
+    query: { room: room.name },
+  });
+  requests.push({
+    endpoint: "/api/game/room-objects",
+    method: "POST",
+    body: { room: room.name },
+  });
+
+  if (!shard || shard.toLowerCase() !== "shard0") {
+    requests.push({
+      endpoint: "/api/game/room-objects",
+      method: "GET",
+      query: { room: room.name, shard: "shard0" },
+    });
+    requests.push({
+      endpoint: "/api/game/room-objects",
+      method: "POST",
+      body: { room: room.name, shard: "shard0" },
+    });
+  }
+
+  return requests;
+}
+
+async function fetchRoomObjectsForThumbnail(
+  baseUrl: string,
+  token: string,
+  username: string,
+  room: RoomSummary
+): Promise<RoomObjectSummary[] | undefined> {
+  const roomObjectsKey = buildRoomObjectsKey(room, baseUrl);
+  const cached = ROOM_OBJECTS_CACHE.get(roomObjectsKey);
+  if (cached && cached.length > 0) {
+    return cached;
+  }
+
+  const requests = buildRoomObjectsRequests(room);
+  let transientOrUnknownFailure = false;
+
+  for (let attempt = 0; attempt < ROOM_OBJECTS_MAX_ATTEMPTS; attempt += 1) {
+    let shouldRetry = false;
+    let rateLimited = false;
+
+    for (const candidate of requests) {
+      const granted = reserveRoomObjectsRequestSlots(1);
+      if (granted <= 0) {
+        shouldRetry = true;
+        rateLimited = true;
+        transientOrUnknownFailure = true;
+        break;
+      }
+
+      let response: ScreepsResponse;
+      try {
+        response = await screepsRequest({
+          baseUrl,
+          endpoint: candidate.endpoint,
+          method: candidate.method,
+          query: candidate.query,
+          body: candidate.body,
+          token,
+          username,
+        });
+      } catch {
+        shouldRetry = true;
+        transientOrUnknownFailure = true;
+        continue;
+      }
+
+      if (!response.ok) {
+        if (isTransientStatus(response.status) || response.status === 0) {
+          shouldRetry = true;
+          transientOrUnknownFailure = true;
+        }
+        continue;
+      }
+
+      const roomObjects = parseRoomObjectsForThumbnail(room.name, response.data);
+      if (roomObjects.length > 0) {
+        ROOM_OBJECTS_CACHE.set(roomObjectsKey, roomObjects);
+        clearRoomObjectsRetry(baseUrl, room);
+        return roomObjects;
+      }
+
+      // Some servers return a successful envelope with empty data intermittently.
+      shouldRetry = true;
+      transientOrUnknownFailure = true;
+    }
+
+    if (rateLimited) {
+      break;
+    }
+    if (!shouldRetry || attempt >= ROOM_OBJECTS_MAX_ATTEMPTS - 1) {
+      break;
+    }
+
+    await wait((attempt + 1) * ROOM_OBJECTS_RETRY_BASE_MS);
+  }
+
+  scheduleRoomObjectsRetry(
+    baseUrl,
+    room,
+    transientOrUnknownFailure
+      ? ROOM_OBJECTS_RETRY_DELAY_MS
+      : ROOM_OBJECTS_NON_TRANSIENT_RETRY_DELAY_MS
+  );
+  return undefined;
+}
+
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -1667,6 +2050,63 @@ async function mapWithConcurrency<T, R>(
   );
   await Promise.all(workers);
   return output;
+}
+
+export async function fetchDashboardRoomObjects(
+  session: ScreepsSession,
+  rooms: RoomSummary[]
+): Promise<Record<string, RoomObjectSummary[]>> {
+  if (!rooms.length) {
+    return {};
+  }
+
+  const now = Date.now();
+  const result: Record<string, RoomObjectSummary[]> = {};
+  const pendingRooms: RoomSummary[] = [];
+
+  for (const room of rooms) {
+    const roomObjectsKey = buildRoomObjectsKey(room, session.baseUrl);
+    const cachedObjects = ROOM_OBJECTS_CACHE.get(roomObjectsKey);
+    const roomLookupKey = toDashboardRoomKey(room.name, room.shard);
+
+    if (cachedObjects && cachedObjects.length > 0) {
+      result[roomLookupKey] = cachedObjects;
+      continue;
+    }
+
+    if (!canRetryRoomObjects(session.baseUrl, room, now)) {
+      continue;
+    }
+
+    pendingRooms.push(room);
+  }
+
+  if (pendingRooms.length === 0) {
+    return result;
+  }
+
+  const fetched = await mapWithConcurrency(pendingRooms, 2, async (room) => {
+    try {
+      const roomObjects = await fetchRoomObjectsForThumbnail(
+        session.baseUrl,
+        session.token,
+        session.username,
+        room
+      );
+      return { room, roomObjects };
+    } catch {
+      return { room, roomObjects: undefined };
+    }
+  });
+
+  for (const item of fetched) {
+    if (!item.roomObjects || item.roomObjects.length === 0) {
+      continue;
+    }
+    result[toDashboardRoomKey(item.room.name, item.room.shard)] = item.roomObjects;
+  }
+
+  return result;
 }
 
 async function fetchRoomThumbnails(session: ScreepsSession, rooms: RoomSummary[]): Promise<RoomThumbnail[]> {

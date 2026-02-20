@@ -13,34 +13,26 @@ interface TerrainThumbnailProps {
 }
 
 const GRID_SIZE = 50;
-export const ROOM_OBJECT_COLORS: Record<string, string> = {
-  controller: "#f1c95a",
-  creep: "#24ff5b",
-  powerCreep: "#00ffdd",
-  constructedWall: "#3a3a3a",
-  extension: "#8aa6ff",
-  factory: "#ff9f7d",
-  keeperLair: "#f48d51",
-  lab: "#b88dff",
-  link: "#5ec8ff",
-  mineral: "#9de4f2",
-  nuker: "#ff7b9b",
-  observer: "#cfd9ff",
-  portal: "#9e6eff",
-  powerBank: "#ff6f75",
-  powerSpawn: "#ff8a8a",
-  rampart: "#33d66f",
-  road: "#6b7379",
-  source: "#e9c44e",
-  spawn: "#b0d4ff",
-  storage: "#9a7d54",
-  terminal: "#74c6ff",
-  tower: "#ff9966",
-  wall: "#3a3a3a",
-};
+const BUILDING_COLOR = "#19ff43";
+const SOURCE_COLOR = "#edc95a";
+const MINERAL_COLOR = "#ffffff";
+const ROAD_COLOR = "rgb(60, 60, 60)";
+const WALL_COLOR = "#060606";
 
 export function resolveRoomObjectColor(type: string): string {
-  return ROOM_OBJECT_COLORS[type] ?? "#cfcfcf";
+  if (type === "source") {
+    return SOURCE_COLOR;
+  }
+  if (type === "mineral") {
+    return MINERAL_COLOR;
+  }
+  if (type === "road") {
+    return ROAD_COLOR;
+  }
+  if (type === "wall" || type === "constructedWall") {
+    return WALL_COLOR;
+  }
+  return BUILDING_COLOR;
 }
 
 function decodeTerrain(encoded: string): number[] | null {
@@ -86,14 +78,14 @@ function drawMapOverlay(
   overlay: RoomMapOverlay,
   scale: number
 ): void {
-  drawPoints(ctx, overlay.roads, scale, "#6b7379");
-  drawPoints(ctx, overlay.sources, scale, "#e9c44e");
-  drawPoints(ctx, overlay.minerals, scale, "#9de4f2");
+  drawPoints(ctx, overlay.roads, scale, ROAD_COLOR);
+  drawPoints(ctx, overlay.sources, scale, SOURCE_COLOR);
+  drawPoints(ctx, overlay.minerals, scale, MINERAL_COLOR);
   drawPoints(ctx, overlay.portals, scale, "#9e6eff");
   drawPoints(ctx, overlay.powerBanks, scale, "#ff6f75");
   drawPoints(ctx, overlay.keepers, scale, "#f48d51");
-  drawPoints(ctx, overlay.userPoints, scale, "#19ff43");
-  drawPoints(ctx, overlay.controllers, scale, "#19ff43");
+  drawPoints(ctx, overlay.userPoints, scale, BUILDING_COLOR);
+  drawPoints(ctx, overlay.controllers, scale, BUILDING_COLOR);
 }
 
 function objectLayer(type: string): number {
@@ -146,12 +138,6 @@ function drawRoomObjects(
 
     ctx.fillStyle = color;
     ctx.fillRect(x * scale + offset, y * scale + offset, pixelSize, pixelSize);
-
-    if (object.type === "controller") {
-      ctx.strokeStyle = "#fff3b0";
-      ctx.lineWidth = Math.max(1, Math.floor(scale / 2));
-      ctx.strokeRect(x * scale, y * scale, scale, scale);
-    }
   }
 }
 
@@ -217,7 +203,9 @@ export function TerrainThumbnail({
       }
     }
 
-    if (mapOverlay) {
+    // Avoid color contamination: when full room objects are available, do not paint realtime
+    // overlay points on top of the same cells.
+    if (mapOverlay && visibleRoomObjects.length === 0) {
       drawMapOverlay(ctx, mapOverlay, scale);
     }
 
