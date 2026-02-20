@@ -9,7 +9,16 @@ interface NavItem {
   href: string;
   label: string;
   meta: string;
-  icon: "user" | "rooms" | "console" | "rankings" | "settings" | "login";
+  icon:
+    | "user"
+    | "rooms"
+    | "map"
+    | "market"
+    | "mail"
+    | "console"
+    | "rankings"
+    | "settings"
+    | "login";
 }
 
 interface AppNavProps {
@@ -36,6 +45,32 @@ function NavIcon({ icon }: { icon: NavItem["icon"] }) {
           <rect x="9" y="2.2" width="4.8" height="4.8" fill="none" />
           <rect x="2.2" y="9" width="4.8" height="4.8" fill="none" />
           <rect x="9" y="9" width="4.8" height="4.8" fill="none" />
+        </svg>
+      );
+    case "map":
+      return (
+        <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M1.8 3.2 5.6 2l4.8 1.8 3.8-1.2v10.2l-3.8 1.2-4.8-1.8-3.8 1.2V3.2Z"
+            fill="none"
+          />
+          <path d="M5.6 2v10.2" />
+          <path d="M10.4 3.8v10.2" />
+        </svg>
+      );
+    case "market":
+      return (
+        <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 6.2h10.2l-.8 6.4H3.8L3 6.2Z" fill="none" />
+          <path d="M4.2 6.2v-1c0-2.1 1.4-3.4 3.8-3.4s3.8 1.3 3.8 3.4v1" />
+          <path d="M6.1 8.6h3.8" />
+        </svg>
+      );
+    case "mail":
+      return (
+        <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.8" y="3" width="12.4" height="10" rx="1.2" fill="none" />
+          <path d="m2.5 4 5.5 4.2L13.5 4" />
         </svg>
       );
     case "console":
@@ -78,9 +113,13 @@ function NavIcon({ icon }: { icon: NavItem["icon"] }) {
 export function AppNav({ onNavigate }: AppNavProps) {
   const pathname = usePathname();
   const session = useAuthStore((state) => state.session);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const mapLabel = locale === "zh-CN" ? "\u5730\u56fe" : "Map";
+  const marketLabel = locale === "zh-CN" ? "\u5546\u5e97" : "Market";
+  const mailLabel = locale === "zh-CN" ? "\u90ae\u4ef6" : "Mail";
+
   const navItems: NavItem[] = session
-      ? [
+    ? [
         {
           href: "/user",
           label: t("nav.userLabel"),
@@ -92,6 +131,24 @@ export function AppNav({ onNavigate }: AppNavProps) {
           label: t("nav.roomsLabel"),
           meta: "/rooms",
           icon: "rooms",
+        },
+        {
+          href: "/map",
+          label: mapLabel,
+          meta: "/map",
+          icon: "map",
+        },
+        {
+          href: "/market",
+          label: marketLabel,
+          meta: "/market",
+          icon: "market",
+        },
+        {
+          href: "/mail",
+          label: mailLabel,
+          meta: "/mail",
+          icon: "mail",
         },
         {
           href: "/console",

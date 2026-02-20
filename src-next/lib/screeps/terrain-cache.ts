@@ -4,6 +4,7 @@ const TERRAIN_CACHE_STORAGE_KEY = "screeps-dashboard-terrain-cache-v1";
 const ROOM_NAME_PATTERN = /^[WE]\d+[NS]\d+$/i;
 const SHARD_PATTERN = /^shard\d+$/i;
 const MAX_TERRAIN_CACHE_ENTRIES = 1200;
+const TERRAIN_ENCODED_LENGTH = 2500;
 
 interface TerrainCacheEntry {
   encoded: string;
@@ -13,6 +14,21 @@ interface TerrainCacheEntry {
 const memoryTerrainCache = new Map<string, TerrainCacheEntry>();
 let terrainCacheHydrated = false;
 let persistTimer: number | undefined;
+
+function isValidTerrainEncoded(value: string): boolean {
+  const normalized = value.trim();
+  if (normalized.length !== TERRAIN_ENCODED_LENGTH) {
+    return false;
+  }
+
+  for (const char of normalized) {
+    if (char < "0" || char > "3") {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 function normalizeRoomName(value: string): string | undefined {
   const normalized = value.trim().toUpperCase();
@@ -86,7 +102,7 @@ function hydrateTerrainCache(): void {
         typeof entryRecord.updatedAt === "number" && Number.isFinite(entryRecord.updatedAt)
           ? entryRecord.updatedAt
           : Date.now();
-      if (!encoded) {
+      if (!encoded || !isValidTerrainEncoded(encoded)) {
         continue;
       }
 
@@ -144,6 +160,11 @@ export function getTerrainFromCache(
   if (exactKey) {
     const cached = memoryTerrainCache.get(exactKey);
     if (cached) {
+      if (!isValidTerrainEncoded(cached.encoded)) {
+        memoryTerrainCache.delete(exactKey);
+        schedulePersistTerrainCache();
+        return undefined;
+      }
       return cached.encoded;
     }
   }
@@ -153,7 +174,16 @@ export function getTerrainFromCache(
     if (!shardlessKey) {
       return undefined;
     }
-    return memoryTerrainCache.get(shardlessKey)?.encoded;
+    const cached = memoryTerrainCache.get(shardlessKey);
+    if (!cached) {
+      return undefined;
+    }
+    if (!isValidTerrainEncoded(cached.encoded)) {
+      memoryTerrainCache.delete(shardlessKey);
+      schedulePersistTerrainCache();
+      return undefined;
+    }
+    return cached.encoded;
   }
 
   return undefined;
@@ -166,7 +196,7 @@ export function setTerrainToCache(
   shard?: string
 ): void {
   const normalizedEncoded = encoded.trim();
-  if (!normalizedEncoded) {
+  if (!normalizedEncoded || !isValidTerrainEncoded(normalizedEncoded)) {
     return;
   }
 
