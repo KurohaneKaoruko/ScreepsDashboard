@@ -94,6 +94,18 @@ function buildRoomsFallbackEndpoints(userId?: string): DashboardFallbackEndpoint
 const DEFAULT_MEMORY_LIMIT_KB = 2_048;
 const MEMORY_MB_UPPER_BOUND = 16;
 const MEMORY_BYTES_LOWER_BOUND = 16_384;
+const ROOM_THUMBNAIL_MAX_ATTEMPTS = 3;
+const ROOM_THUMBNAIL_RETRY_BASE_MS = 450;
+
+function isTransientStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function normalizeRoomName(value: string | undefined): string | undefined {
   if (!value) {
@@ -1147,10 +1159,54 @@ function getResponseError(response: ScreepsResponse): string {
   return message ? `${response.status}: ${message}` : `${response.status}`;
 }
 
+function extractTerrainString(value: unknown): string | undefined {
+  const direct = asString(value);
+  if (direct) {
+    return direct;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const itemDirect = asString(item);
+      if (itemDirect) {
+        return itemDirect;
+      }
+
+      const itemRecord = asRecord(item) ?? {};
+      const nested = firstString([
+        itemRecord.terrain,
+        itemRecord.encodedTerrain,
+        asRecord(itemRecord.roomTerrain)?.terrain,
+      ]);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  const record = asRecord(value) ?? {};
+  return firstString([
+    record.terrain,
+    record.encodedTerrain,
+    asRecord(record.roomTerrain)?.terrain,
+  ]);
+}
+
 function extractTerrain(payload: unknown): string | undefined {
+  const direct = extractTerrainString(payload);
+  if (direct) {
+    return direct;
+  }
+
   const root = pickPayloadRecord(payload, ["terrain", "encodedTerrain", "roomTerrain"]);
-  const roomTerrain = asRecord(root.roomTerrain) ?? {};
-  return firstString([root.terrain, root.encodedTerrain, roomTerrain.terrain]);
+  return (
+    extractTerrainString(root.terrain) ??
+    extractTerrainString(root.encodedTerrain) ??
+    extractTerrainString(root.roomTerrain) ??
+    extractTerrainString(root.text) ??
+    extractTerrainString(root.data)
+  );
 }
 
 function extractResponseText(payload: unknown): string | undefined {
@@ -1216,33 +1272,50 @@ async function fetchRoomThumbnail(
     terrainQueries.push({ room: room.name, encoded: 1, shard: "shard0" });
   }
 
-  for (const query of terrainQueries) {
-    try {
-      const response = await screepsRequest({
-        baseUrl,
-        endpoint: "/api/game/room-terrain",
-        method: "GET",
-        query,
-        token,
-        username,
-      });
-      if (!response.ok) {
+  for (let attempt = 0; attempt < ROOM_THUMBNAIL_MAX_ATTEMPTS; attempt += 1) {
+    let shouldRetry = false;
+
+    for (const query of terrainQueries) {
+      try {
+        const response = await screepsRequest({
+          baseUrl,
+          endpoint: "/api/game/room-terrain",
+          method: "GET",
+          query,
+          token,
+          username,
+        });
+
+        if (!response.ok) {
+          if (isTransientStatus(response.status)) {
+            shouldRetry = true;
+          }
+          continue;
+        }
+
+        const terrainEncoded = extractTerrain(response.data);
+        if (!terrainEncoded) {
+          // Some servers occasionally return empty payloads; retry with backoff.
+          shouldRetry = true;
+          continue;
+        }
+
+        return {
+          ...room,
+          terrainEncoded,
+          thumbnailSource: "terrain",
+        };
+      } catch {
+        shouldRetry = true;
         continue;
       }
-
-      const terrainEncoded = extractTerrain(response.data);
-      if (!terrainEncoded) {
-        continue;
-      }
-
-      return {
-        ...room,
-        terrainEncoded,
-        thumbnailSource: "terrain",
-      };
-    } catch {
-      continue;
     }
+
+    if (!shouldRetry || attempt >= ROOM_THUMBNAIL_MAX_ATTEMPTS - 1) {
+      break;
+    }
+
+    await wait((attempt + 1) * ROOM_THUMBNAIL_RETRY_BASE_MS);
   }
 
   return {

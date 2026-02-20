@@ -50,9 +50,9 @@ function formatRatio(used: number | undefined, total: number | undefined): strin
 
 function formatMemoryRatio(used: number | undefined, total: number | undefined): string {
   if (used === undefined || total === undefined) {
-    return "--/-- KB";
+    return "--/--";
   }
-  return `${formatNumber(used)}/${formatNumber(total)} KB`;
+  return `${formatNumber(used)}/${formatNumber(total)}`;
 }
 
 function errorToMessage(error: unknown): string {
@@ -214,14 +214,11 @@ export function DashboardPanel() {
   const avatarFallback = profile?.username?.slice(0, 1).toUpperCase() ?? "?";
   const cpuUsed = runtimeMetrics.cpuUsed ?? profile?.cpuUsed;
   const cpuLimit = runtimeMetrics.cpuLimit ?? profile?.cpuLimit;
-  const cpuBucket = runtimeMetrics.cpuBucket ?? profile?.cpuBucket;
   const memUsed = runtimeMetrics.memUsed ?? profile?.memUsed;
   const memLimit = runtimeMetrics.memLimit ?? profile?.memLimit;
   const memPercent =
     runtimeMetrics.memPercent ?? profile?.memPercent ?? safePercent(memUsed, memLimit);
   const cpuPercent = safePercent(cpuUsed, cpuLimit);
-  const bucketPercent =
-    cpuBucket === undefined ? undefined : (cpuBucket / 10_000) * 100;
   const accessKeyValue = profile?.resources.accessKey;
   const avatarCandidates = useMemo(
     () =>
@@ -282,7 +279,6 @@ export function DashboardPanel() {
     gpl: "#d7636c",
     cpu: "#7ca5ff",
     mem: "#8f88ff",
-    bkt: "#e6bd5b",
   } as const;
 
   const groupedRooms = useMemo(() => {
@@ -521,19 +517,6 @@ export function DashboardPanel() {
                       size={ringSize}
                       shrinkPercentSymbol
                     />
-                    <CircularProgress
-                      label="BKT"
-                      percent={bucketPercent}
-                      valueText={formatPercent(bucketPercent)}
-                      subText={
-                        cpuBucket === undefined
-                          ? "--/10000"
-                          : `${formatNumber(cpuBucket)}/10000`
-                      }
-                      ringColor={ringColors.bkt}
-                      size={ringSize}
-                      shrinkPercentSymbol
-                    />
                   </div>
                 </div>
               </div>
@@ -580,7 +563,7 @@ export function DashboardPanel() {
                               <TerrainThumbnail
                                 encoded={room.terrainEncoded}
                                 roomName={room.name}
-                                size={112}
+                                size={150}
                                 mapOverlay={roomOverlay}
                               />
                             </Link>

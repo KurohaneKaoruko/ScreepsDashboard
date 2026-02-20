@@ -88,10 +88,47 @@ function flattenRecords(payload: unknown, depth: number, sink: Record<string, un
   }
 }
 
+function extractTerrainString(value: unknown): string | undefined {
+  const direct = asString(value);
+  if (direct) {
+    return direct;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const itemDirect = asString(item);
+      if (itemDirect) {
+        return itemDirect;
+      }
+
+      const itemRecord = asRecord(item) ?? {};
+      const nested = firstString([
+        itemRecord.terrain,
+        itemRecord.encodedTerrain,
+        asRecord(itemRecord.roomTerrain)?.terrain,
+      ]);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  const record = asRecord(value) ?? {};
+  return firstString([
+    record.terrain,
+    record.encodedTerrain,
+    asRecord(record.roomTerrain)?.terrain,
+  ]);
+}
+
 function extractTerrain(payload: unknown): string | undefined {
   const root = asRecord(payload) ?? {};
-  const roomTerrain = asRecord(root.roomTerrain) ?? {};
-  return firstString([root.terrain, root.encodedTerrain, roomTerrain.terrain]);
+  return (
+    extractTerrainString(root.terrain) ??
+    extractTerrainString(root.encodedTerrain) ??
+    extractTerrainString(root.roomTerrain)
+  );
 }
 
 function normalizeRoomName(roomName: string): string {

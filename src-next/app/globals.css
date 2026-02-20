@@ -1008,10 +1008,11 @@ a {
   align-items: start;
 }
 
-.progress-ring-grid-system {
-  width: min(100%, 360px);
+.progress-ring-grid.progress-ring-grid-system {
+  width: fit-content;
+  max-width: 100%;
   margin-left: auto;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, max-content);
   justify-items: end;
 }
 
@@ -1315,45 +1316,56 @@ a {
 }
 
 .room-thumb-grid {
-  padding: 8px;
+  --room-thumb-card-width: 176px;
+  --room-thumb-map-size: 150px;
+  padding: 10px;
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
+  gap: 10px;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(var(--room-thumb-card-width), var(--room-thumb-card-width))
+  );
   justify-content: flex-start;
 }
 
 .room-thumb-card {
-  width: 148px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: #050505;
-  padding: 7px;
+  width: var(--room-thumb-card-width);
+  border: 1px solid #1d1d1d;
+  border-radius: 0;
+  background: linear-gradient(180deg, rgba(11, 11, 11, 0.96) 0%, rgba(6, 6, 6, 0.96) 100%);
+  padding: 6px;
   display: grid;
-  gap: 7px;
-  justify-items: start;
+  gap: 6px;
+  justify-items: stretch;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .room-thumb-card:hover {
-  border-color: var(--border-strong);
+  border-color: #39466b;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
 }
 
 .room-thumb-head {
   display: flex;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   align-items: flex-start;
-  width: 132px;
+  width: 100%;
   max-width: 100%;
 }
 
 .room-thumb-head strong {
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   letter-spacing: 0.04em;
+  line-height: 1;
 }
 
 .room-thumb-head span {
-  font-size: 0.66rem;
+  font-size: 0.68rem;
   color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .terrain-canvas {
@@ -1377,6 +1389,30 @@ a {
   color: var(--text-soft);
   font-size: 0.68rem;
   background: #060606;
+}
+
+.room-thumb-card .terrain-canvas,
+.room-thumb-card .terrain-fallback {
+  width: 100%;
+  max-width: none;
+  justify-self: center;
+}
+
+.room-thumb-card .terrain-canvas {
+  border-color: #232323;
+  border-radius: 0;
+  background: #050505;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  filter: saturate(1.08) contrast(1.06);
+}
+
+.room-thumb-card:hover .terrain-canvas {
+  filter: saturate(1.16) contrast(1.1);
+}
+
+.room-thumb-card .terrain-fallback {
+  border-radius: 0;
+  font-size: 0.7rem;
 }
 
 .control-row {
@@ -1580,7 +1616,12 @@ a {
   }
 
   .room-thumb-grid {
-    grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
+    --room-thumb-card-width: 170px;
+    --room-thumb-map-size: 144px;
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(var(--room-thumb-card-width), var(--room-thumb-card-width))
+    );
   }
 
   .profile-detail-grid {
@@ -1792,8 +1833,9 @@ a {
     justify-content: flex-end;
   }
 
-  .progress-ring-grid-system {
-    width: min(100%, 330px);
+  .progress-ring-grid.progress-ring-grid-system {
+    width: fit-content;
+    max-width: 100%;
   }
 
   .metric-cluster,
@@ -1826,7 +1868,12 @@ a {
   }
 
   .room-thumb-grid {
-    grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
+    --room-thumb-card-width: 162px;
+    --room-thumb-map-size: 138px;
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(var(--room-thumb-card-width), var(--room-thumb-card-width))
+    );
   }
 
   .dense-table,
@@ -1882,7 +1929,12 @@ a {
   }
 
   .room-thumb-grid {
-    grid-template-columns: repeat(auto-fill, minmax(148px, 148px));
+    --room-thumb-card-width: 154px;
+    --room-thumb-map-size: 132px;
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(var(--room-thumb-card-width), var(--room-thumb-card-width))
+    );
   }
 
   .dense-table,
