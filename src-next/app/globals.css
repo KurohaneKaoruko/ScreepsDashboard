@@ -1517,8 +1517,175 @@ a {
   font-size: 0.7rem;
 }
 
-.room-detail-search-card {
-  margin-top: 0;
+.room-detail-panel {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+
+.room-detail-panel.room-detail-panel-map {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.room-detail-panel .dashboard-header {
+  align-items: center;
+  gap: 8px;
+}
+
+.room-detail-panel .page-title {
+  font-size: clamp(0.94rem, 1.15vw, 1.14rem);
+  letter-spacing: 0.02em;
+}
+
+.room-detail-panel .header-actions {
+  gap: 6px;
+}
+
+.room-detail-panel .ghost-button,
+.room-detail-panel .secondary-button {
+  padding: 5px 8px;
+  font-size: 0.68rem;
+}
+
+.room-detail-map-wrap {
+  display: grid;
+  min-height: 0;
+}
+
+.room-detail-panel.room-detail-panel-map .room-detail-map-wrap {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.room-game-map {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.room-game-map.room-game-map-official {
+  position: relative;
+  gap: 0;
+  min-height: 0;
+}
+
+.room-detail-panel.room-detail-panel-map .room-game-map.room-game-map-official {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.room-game-map-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.room-game-map-zoom {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  text-align: right;
+}
+
+.room-game-map-tool {
+  min-height: 30px;
+  line-height: 1;
+  padding: 5px 10px;
+}
+
+.room-game-map-viewport {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  height: min(68vh, 760px);
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid #1f2632;
+  background:
+    radial-gradient(circle at 80% 14%, rgba(45, 63, 44, 0.34), transparent 34%),
+    radial-gradient(circle at 22% 72%, rgba(27, 42, 30, 0.25), transparent 40%),
+    #0b0f14;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.room-game-map.room-game-map-official .room-game-map-toolbar {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 5;
+  background: rgba(5, 7, 11, 0.78);
+  border: 1px solid rgba(108, 129, 189, 0.38);
+  border-radius: 10px;
+  padding: 4px 6px;
+  backdrop-filter: blur(2px);
+}
+
+.room-game-map.room-game-map-official .room-game-map-zoom {
+  min-width: 44px;
+  font-size: 0.68rem;
+}
+
+.room-game-map.room-game-map-official .room-game-map-tool {
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+
+.room-game-map-viewport.room-game-map-viewport-official {
+  min-height: 220px;
+  height: 100%;
+  border: 1px solid #24344d;
+  border-radius: 10px;
+  background: #080d12;
+}
+
+.room-detail-panel.room-detail-panel-map .room-game-map-viewport.room-game-map-viewport-official {
+  min-height: 0;
+}
+
+.room-game-map-viewport.is-dragging {
+  cursor: grabbing;
+}
+
+.room-game-map-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+
+.room-game-map-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-soft);
+  font-size: 0.74rem;
+}
+
+.room-official-map-host {
+  position: absolute;
+  inset: 0;
+}
+
+.room-official-map-host canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .room-detail-terrain {
@@ -1872,6 +2039,16 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .room-game-map-viewport {
+    min-height: 340px;
+    height: min(62vh, 620px);
+  }
+
+  .room-game-map-viewport.room-game-map-viewport-official {
+    min-height: 200px;
+    height: 100%;
+  }
+
   .dashboard-panel,
   .placeholder-page,
   .settings-panel {
@@ -1916,6 +2093,32 @@ a {
 
   .card {
     padding: 9px;
+  }
+
+  .room-game-map-toolbar {
+    justify-content: space-between;
+  }
+
+  .room-game-map-viewport {
+    min-height: 280px;
+    height: min(56vh, 520px);
+  }
+
+  .room-game-map.room-game-map-official .room-game-map-toolbar {
+    right: 8px;
+    top: 8px;
+    padding: 3px 5px;
+    gap: 4px;
+  }
+
+  .room-game-map.room-game-map-official .room-game-map-tool {
+    min-height: 24px;
+    padding: 3px 7px;
+  }
+
+  .room-game-map-viewport.room-game-map-viewport-official {
+    min-height: 160px;
+    height: 100%;
   }
 
   .inline-select-trigger {

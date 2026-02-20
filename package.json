@@ -25,6 +25,8 @@
     "tauri:android:build:aab": "node node_modules/@tauri-apps/cli/tauri.js android build --ci --aab --target aarch64 armv7"
   },
   "dependencies": {
+    "@screeps/renderer": "^1.6.8-arena",
+    "@screeps/renderer-metadata": "^1.6.8-arena",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "next": "^15.3.0",
