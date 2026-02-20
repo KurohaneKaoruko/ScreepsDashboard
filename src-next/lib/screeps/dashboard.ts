@@ -1,4 +1,4 @@
-import { normalizeBaseUrl, screepsRequest } from "./request";
+import { normalizeBaseUrl, screepsBatchRequest, screepsRequest } from "./request";
 import { getRoomSummariesFromCache, setRoomSummariesToCache } from "./room-summary-cache";
 import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
 import type {
@@ -6,6 +6,7 @@ import type {
   QueryParams,
   RoomSummary,
   RoomThumbnail,
+  ScreepsRequest,
   ScreepsResponse,
   ScreepsMethod,
   ScreepsSession,
@@ -183,14 +184,23 @@ function pruneRoomThumbnailRequestTimestamps(now: number): void {
   }
 }
 
-function reserveRoomThumbnailRequestSlot(): boolean {
+function reserveRoomThumbnailRequestSlots(count: number): number {
+  if (count <= 0) {
+    return 0;
+  }
+
   const now = Date.now();
   pruneRoomThumbnailRequestTimestamps(now);
-  if (ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.length >= ROOM_THUMBNAIL_REQUEST_LIMIT) {
-    return false;
+  const availableSlots = ROOM_THUMBNAIL_REQUEST_LIMIT - ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.length;
+  if (availableSlots <= 0) {
+    return 0;
   }
-  ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.push(now);
-  return true;
+
+  const grantedSlots = Math.min(count, availableSlots);
+  for (let index = 0; index < grantedSlots; index += 1) {
+    ROOM_THUMBNAIL_REQUEST_TIMESTAMPS.push(now);
+  }
+  return grantedSlots;
 }
 
 function canRetryRoomThumbnail(baseUrl: string, room: RoomSummary, now: number): boolean {
@@ -1293,33 +1303,33 @@ async function hydrateRoomLevelsFromMapStats(
         statName: MAP_STATS_RCL_STAT_NAME,
       });
 
-      for (const body of requestBodies) {
-        try {
-          const response = await screepsRequest({
-            baseUrl: session.baseUrl,
-            endpoint: "/api/game/map-stats",
-            method: "POST",
-            body,
-            token: session.token,
-            username: session.username,
-          });
-          if (!response.ok) {
-            continue;
-          }
+      const responses = await screepsBatchRequest(
+        requestBodies.map((body) => ({
+          baseUrl: session.baseUrl,
+          endpoint: "/api/game/map-stats",
+          method: "POST",
+          body,
+          token: session.token,
+          username: session.username,
+        })),
+        { maxConcurrency: Math.min(3, requestBodies.length) }
+      );
 
-          mergedRooms = mergeRoomSummaries(mergedRooms, response.data, shardKey || undefined);
-
-          const levelByKey = buildRoomLevelMap(session.baseUrl, mergedRooms);
-          const unresolvedCount = roomChunk.reduce((count, room) => {
-            const roomLevel = levelByKey.get(buildRoomLevelKey(room, session.baseUrl));
-            return roomLevel === undefined ? count + 1 : count;
-          }, 0);
-
-          if (unresolvedCount === 0) {
-            break;
-          }
-        } catch {
+      for (const response of responses) {
+        if (!response.ok) {
           continue;
+        }
+
+        mergedRooms = mergeRoomSummaries(mergedRooms, response.data, shardKey || undefined);
+
+        const levelByKey = buildRoomLevelMap(session.baseUrl, mergedRooms);
+        const unresolvedCount = roomChunk.reduce((count, room) => {
+          const roomLevel = levelByKey.get(buildRoomLevelKey(room, session.baseUrl));
+          return roomLevel === undefined ? count + 1 : count;
+        }, 0);
+
+        if (unresolvedCount === 0) {
+          break;
         }
       }
 
@@ -1398,35 +1408,38 @@ async function tryFallbackPayload(
     ? endpointIdentity(selected.endpoint, selected.method, selected.query, selected.body)
     : undefined;
 
-  for (const candidate of candidates) {
-    if (
-      endpointIdentity(candidate.endpoint, candidate.method, candidate.query, candidate.body) ===
+  const filteredCandidates = candidates.filter(
+    (candidate) =>
+      endpointIdentity(candidate.endpoint, candidate.method, candidate.query, candidate.body) !==
       selectedKey
-    ) {
+  );
+
+  if (filteredCandidates.length === 0) {
+    return undefined;
+  }
+
+  const responses = await screepsBatchRequest(
+    filteredCandidates.map((candidate) => ({
+      baseUrl: session.baseUrl,
+      endpoint: candidate.endpoint,
+      method: candidate.method,
+      query: candidate.query,
+      body: candidate.body,
+      token: session.token,
+      username: session.username,
+    })),
+    { maxConcurrency: Math.min(6, filteredCandidates.length) }
+  );
+
+  for (let index = 0; index < filteredCandidates.length; index += 1) {
+    const response = responses[index];
+    if (!response?.ok) {
       continue;
     }
-
-    try {
-      const response = await screepsRequest({
-        baseUrl: session.baseUrl,
-        endpoint: candidate.endpoint,
-        method: candidate.method,
-        query: candidate.query,
-        body: candidate.body,
-        token: session.token,
-        username: session.username,
-      });
-
-      if (!response.ok) {
-        continue;
-      }
-      if (validator && !validator(response.data)) {
-        continue;
-      }
-      return response.data;
-    } catch {
+    if (validator && !validator(response.data)) {
       continue;
     }
+    return response.data;
   }
 
   return undefined;
@@ -1569,49 +1582,48 @@ async function fetchRoomThumbnail(
     let shouldRetry = false;
     let rateLimited = false;
 
-    for (const query of terrainQueries) {
-      if (!reserveRoomThumbnailRequestSlot()) {
-        shouldRetry = true;
-        rateLimited = true;
-        transientOrUnknownFailure = true;
-        break;
-      }
+    const grantedQueryCount = reserveRoomThumbnailRequestSlots(terrainQueries.length);
+    if (grantedQueryCount <= 0) {
+      shouldRetry = true;
+      rateLimited = true;
+      transientOrUnknownFailure = true;
+      break;
+    }
 
-      try {
-        const response = await screepsRequest({
-          baseUrl,
-          endpoint: "/api/game/room-terrain",
-          method: "GET",
-          query,
-          token,
-          username,
-        });
+    const requestQueries = terrainQueries.slice(0, grantedQueryCount);
+    const responses = await screepsBatchRequest(
+      requestQueries.map((query) => ({
+        baseUrl,
+        endpoint: "/api/game/room-terrain",
+        method: "GET",
+        query,
+        token,
+        username,
+      })),
+      { maxConcurrency: grantedQueryCount }
+    );
 
-        if (!response.ok) {
-          if (isTransientStatus(response.status)) {
-            shouldRetry = true;
-            transientOrUnknownFailure = true;
-          }
-          continue;
-        }
-
-        const terrainEncoded = normalizeTerrainEncoded(extractTerrain(response.data));
-        if (!terrainEncoded) {
-          // Some servers occasionally return empty payloads; retry with backoff.
+    for (const response of responses) {
+      if (!response.ok) {
+        if (isTransientStatus(response.status) || response.status === 0) {
           shouldRetry = true;
           transientOrUnknownFailure = true;
-          continue;
         }
+        continue;
+      }
 
-        ROOM_THUMBNAIL_CACHE.set(roomKey, terrainEncoded);
-        setTerrainToCache(baseUrl, room.name, terrainEncoded, room.shard);
-        clearRoomThumbnailRetry(baseUrl, room);
-        return toTerrainThumbnail(room, terrainEncoded);
-      } catch {
+      const terrainEncoded = normalizeTerrainEncoded(extractTerrain(response.data));
+      if (!terrainEncoded) {
+        // Some servers occasionally return empty payloads; retry with backoff.
         shouldRetry = true;
         transientOrUnknownFailure = true;
         continue;
       }
+
+      ROOM_THUMBNAIL_CACHE.set(roomKey, terrainEncoded);
+      setTerrainToCache(baseUrl, room.name, terrainEncoded, room.shard);
+      clearRoomThumbnailRetry(baseUrl, room);
+      return toTerrainThumbnail(room, terrainEncoded);
     }
 
     if (rateLimited) {
@@ -1715,18 +1727,20 @@ async function fetchRoomThumbnails(session: ScreepsSession, rooms: RoomSummary[]
 }
 
 export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<DashboardSnapshot> {
-  const profilePromise = screepsRequest({
-    baseUrl: session.baseUrl,
-    endpoint: session.endpointMap.profile.endpoint,
-    method: session.endpointMap.profile.method,
-    query: session.endpointMap.profile.query,
-    body: session.endpointMap.profile.body,
-    token: session.token,
-    username: session.username,
-  }).catch(() => undefined);
+  const requestBatch: ScreepsRequest[] = [
+    {
+      baseUrl: session.baseUrl,
+      endpoint: session.endpointMap.profile.endpoint,
+      method: session.endpointMap.profile.method,
+      query: session.endpointMap.profile.query,
+      body: session.endpointMap.profile.body,
+      token: session.token,
+      username: session.username,
+    },
+  ];
 
-  const roomsPromise = session.endpointMap.rooms
-    ? screepsRequest({
+  const roomsRequestIndex = session.endpointMap.rooms
+    ? requestBatch.push({
         baseUrl: session.baseUrl,
         endpoint: session.endpointMap.rooms.endpoint,
         method: session.endpointMap.rooms.method,
@@ -1734,11 +1748,11 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
         body: session.endpointMap.rooms.body,
         token: session.token,
         username: session.username,
-      }).catch(() => undefined)
-    : Promise.resolve(undefined);
+      }) - 1
+    : -1;
 
-  const statsPromise = session.endpointMap.stats
-    ? screepsRequest({
+  const statsRequestIndex = session.endpointMap.stats
+    ? requestBatch.push({
         baseUrl: session.baseUrl,
         endpoint: session.endpointMap.stats.endpoint,
         method: session.endpointMap.stats.method,
@@ -1746,14 +1760,16 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
         body: session.endpointMap.stats.body,
         token: session.token,
         username: session.username,
-      }).catch(() => undefined)
-    : Promise.resolve(undefined);
+      }) - 1
+    : -1;
 
-  const [profileResponse, roomsResponse, statsResponse] = await Promise.all([
-    profilePromise,
-    roomsPromise,
-    statsPromise,
-  ]);
+  const initialResponses = await screepsBatchRequest(requestBatch, {
+    maxConcurrency: Math.min(6, requestBatch.length),
+  });
+
+  const profileResponse = initialResponses[0];
+  const roomsResponse = roomsRequestIndex >= 0 ? initialResponses[roomsRequestIndex] : undefined;
+  const statsResponse = statsRequestIndex >= 0 ? initialResponses[statsRequestIndex] : undefined;
 
   let safeProfileResponse = profileResponse;
   if (!safeProfileResponse?.ok) {
@@ -1764,16 +1780,15 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
       session.endpointMap.profile.body
     );
 
-    for (const candidate of PROFILE_FALLBACK_ENDPOINTS) {
-      if (
-        endpointIdentity(candidate.endpoint, candidate.method, candidate.query, candidate.body) ===
+    const profileFallbackCandidates = PROFILE_FALLBACK_ENDPOINTS.filter(
+      (candidate) =>
+        endpointIdentity(candidate.endpoint, candidate.method, candidate.query, candidate.body) !==
         selectedProfileKey
-      ) {
-        continue;
-      }
+    );
 
-      try {
-        const response = await screepsRequest({
+    if (profileFallbackCandidates.length > 0) {
+      const fallbackResponses = await screepsBatchRequest(
+        profileFallbackCandidates.map((candidate) => ({
           baseUrl: session.baseUrl,
           endpoint: candidate.endpoint,
           method: candidate.method,
@@ -1781,14 +1796,13 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
           body: candidate.body,
           token: session.token,
           username: session.username,
-        });
+        })),
+        { maxConcurrency: profileFallbackCandidates.length }
+      );
 
-        if (response.ok) {
-          safeProfileResponse = response;
-          break;
-        }
-      } catch {
-        continue;
+      const firstSuccessfulResponse = fallbackResponses.find((response) => response.ok);
+      if (firstSuccessfulResponse) {
+        safeProfileResponse = firstSuccessfulResponse;
       }
     }
   }
@@ -1823,20 +1837,21 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
   const shouldFetchRoomsFallback = !hasUsefulRoomsPayload(safeRoomsPayload) && cachedRooms.length === 0;
 
   if (shouldFetchRoomsFallback && profileUserId) {
-    try {
-      const roomsWithId = await screepsRequest({
-        baseUrl: session.baseUrl,
-        endpoint: "/api/user/rooms",
-        method: "GET",
-        query: { id: profileUserId },
-        token: session.token,
-        username: session.username,
-      });
-      if (roomsWithId.ok) {
-        safeRoomsPayload = roomsWithId.data;
-      }
-    } catch {
-      // Ignore and keep fallback chain below.
+    const [roomsWithId] = await screepsBatchRequest(
+      [
+        {
+          baseUrl: session.baseUrl,
+          endpoint: "/api/user/rooms",
+          method: "GET",
+          query: { id: profileUserId },
+          token: session.token,
+          username: session.username,
+        },
+      ],
+      { maxConcurrency: 1 }
+    );
+    if (roomsWithId?.ok) {
+      safeRoomsPayload = roomsWithId.data;
     }
   }
 

@@ -1,4 +1,4 @@
-import { screepsRequest } from "./request";
+import { screepsBatchRequest, screepsRequest } from "./request";
 import type {
   EndpointMap,
   EndpointProbe,
@@ -199,47 +199,42 @@ async function probeGroup(
 ): Promise<ProbeSelection> {
   const probes: EndpointProbe[] = [];
 
-  for (const candidate of candidates) {
-    try {
-      const response = await screepsRequest({
-        baseUrl,
-        endpoint: candidate.endpoint,
-        method: endpointMethod(candidate),
-        query: candidate.query,
-        body: candidate.body,
-        token,
-        username,
-      });
+  const responses = await screepsBatchRequest(
+    candidates.map((candidate) => ({
+      baseUrl,
+      endpoint: candidate.endpoint,
+      method: endpointMethod(candidate),
+      query: candidate.query,
+      body: candidate.body,
+      token,
+      username,
+    })),
+    { maxConcurrency: Math.min(6, candidates.length) }
+  );
 
-      const probe: EndpointProbe = {
-        group,
-        candidateId: candidate.id,
-        endpoint: candidate.endpoint,
-        method: endpointMethod(candidate),
-        status: response.status,
-        ok: response.ok,
-        error: response.ok ? undefined : extractError(response.data) ?? `HTTP ${response.status}`,
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = candidates[index];
+    const response = responses[index];
+
+    const probe: EndpointProbe = {
+      group,
+      candidateId: candidate.id,
+      endpoint: candidate.endpoint,
+      method: endpointMethod(candidate),
+      status: response?.status ?? 0,
+      ok: response?.ok ?? false,
+      error: response?.ok
+        ? undefined
+        : extractError(response?.data) ?? `HTTP ${response?.status ?? 0}`,
+    };
+    probes.push(probe);
+
+    if (response?.ok) {
+      return {
+        selected: candidate,
+        probes,
+        sample: response.data,
       };
-      probes.push(probe);
-
-      if (response.ok) {
-        return {
-          selected: candidate,
-          probes,
-          sample: response.data,
-        };
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      probes.push({
-        group,
-        candidateId: candidate.id,
-        endpoint: candidate.endpoint,
-        method: endpointMethod(candidate),
-        status: 0,
-        ok: false,
-        error: message,
-      });
     }
   }
 

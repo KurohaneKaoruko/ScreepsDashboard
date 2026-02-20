@@ -1,11 +1,10 @@
-import { normalizeBaseUrl, screepsRequest } from "./request";
+import { normalizeBaseUrl, screepsBatchRequest } from "./request";
 import type {
   PublicLeaderboardEntry,
   PublicMapSummary,
   PublicRoomStat,
   PublicSnapshot,
   ScreepsRequest,
-  ScreepsResponse,
 } from "./types";
 
 const DEFAULT_TERRAIN_ROOM = "W0N0";
@@ -78,17 +77,6 @@ function firstNumber(values: unknown[]): number | undefined {
     }
   }
   return undefined;
-}
-
-async function safeRequest(
-  request: ScreepsRequest
-): Promise<{ response?: ScreepsResponse }> {
-  try {
-    const response = await screepsRequest(request);
-    return response.ok ? { response } : {};
-  } catch {
-    return {};
-  }
 }
 
 function flattenRecords(payload: unknown, depth: number, sink: Record<string, unknown>[]): void {
@@ -251,42 +239,56 @@ function buildMapSummary(
 export async function fetchPublicSnapshot(rawBaseUrl: string): Promise<PublicSnapshot> {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
 
-  const [leaderboardList, leaderboardSeasons, mapStats, terrain] = await Promise.all([
-    safeRequest({
+  const requests: ScreepsRequest[] = [
+    {
       baseUrl,
       endpoint: "/api/leaderboard/list",
       method: "GET",
       query: { mode: "world", limit: 12, offset: 0 },
-    }),
-    safeRequest({
+    },
+    {
       baseUrl,
       endpoint: "/api/leaderboard/seasons",
       method: "GET",
-    }),
-    safeRequest({
+    },
+    {
       baseUrl,
       endpoint: "/api/game/map-stats",
       method: "POST",
       body: { rooms: SAMPLE_ROOMS, statName: "owner0" },
-    }),
-    safeRequest({
+    },
+    {
       baseUrl,
       endpoint: "/api/game/room-terrain",
       method: "GET",
       query: { room: DEFAULT_TERRAIN_ROOM, encoded: 1 },
-    }),
-  ]);
+    },
+  ];
 
-  const leaderboardPayload = leaderboardList.response?.data ?? leaderboardSeasons.response?.data ?? {};
+  let responses: Awaited<ReturnType<typeof screepsBatchRequest>> = [];
+  try {
+    responses = await screepsBatchRequest(requests, {
+      maxConcurrency: Math.min(6, requests.length),
+    });
+  } catch {
+    responses = [];
+  }
+
+  const leaderboardList = responses[0]?.ok ? responses[0] : undefined;
+  const leaderboardSeasons = responses[1]?.ok ? responses[1] : undefined;
+  const mapStats = responses[2]?.ok ? responses[2] : undefined;
+  const terrain = responses[3]?.ok ? responses[3] : undefined;
+
+  const leaderboardPayload = leaderboardList?.data ?? leaderboardSeasons?.data ?? {};
   const { entries, dimensions } = extractLeaderboard(leaderboardPayload);
   const season = firstString([
-    asRecord(leaderboardList.response?.data)?.season,
-    asRecord(leaderboardSeasons.response?.data)?.season,
-    asArray(leaderboardSeasons.response?.data)[0],
+    asRecord(leaderboardList?.data)?.season,
+    asRecord(leaderboardSeasons?.data)?.season,
+    asArray(leaderboardSeasons?.data)[0],
   ]);
 
-  const mapPayload = mapStats.response?.data ?? {};
-  const terrainPayload = terrain.response?.data ?? {};
+  const mapPayload = mapStats?.data ?? {};
+  const terrainPayload = terrain?.data ?? {};
 
   return {
     fetchedAt: new Date().toISOString(),
@@ -294,7 +296,7 @@ export async function fetchPublicSnapshot(rawBaseUrl: string): Promise<PublicSna
     leaderboard:
       entries.length > 0
         ? {
-            source: leaderboardList.response ? "leaderboard/list" : "leaderboard/seasons",
+            source: leaderboardList ? "leaderboard/list" : "leaderboard/seasons",
             season,
             entries,
             dimensions,

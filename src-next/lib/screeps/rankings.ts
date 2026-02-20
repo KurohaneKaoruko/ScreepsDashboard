@@ -1,4 +1,4 @@
-import { normalizeBaseUrl, screepsRequest } from "./request";
+import { normalizeBaseUrl, screepsBatchRequest, screepsRequest } from "./request";
 import type {
   RankingEntry,
   RankingMode,
@@ -220,11 +220,17 @@ async function fetchLeaderboardPayload(
     });
   }
 
-  for (const request of candidates) {
-    const response = await safeRequest(request);
-    if (response) {
-      return response;
+  try {
+    const responses = await screepsBatchRequest(candidates, {
+      maxConcurrency: Math.min(4, candidates.length),
+    });
+    for (const response of responses) {
+      if (response.ok) {
+        return response;
+      }
     }
+  } catch {
+    // Ignore bridge-level failures and keep existing undefined fallback behavior.
   }
 
   return undefined;

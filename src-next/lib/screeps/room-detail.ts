@@ -1,4 +1,4 @@
-import { screepsRequest } from "./request";
+import { screepsBatchRequest, screepsRequest } from "./request";
 import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
 import type {
   QueryParams,
@@ -8,6 +8,7 @@ import type {
   RoomObjectSummary,
   RoomSourceSummary,
   RoomStructureSummary,
+  ScreepsResponse,
   ScreepsSession,
 } from "./types";
 
@@ -802,6 +803,35 @@ function buildTerrainQueries(roomName: string, shard?: string): QueryParams[] {
   return queries;
 }
 
+async function requestCandidates(
+  baseUrl: string,
+  token: string,
+  username: string,
+  requests: RoomOverviewRequest[],
+  maxConcurrency = 6
+): Promise<ScreepsResponse[]> {
+  if (requests.length === 0) {
+    return [];
+  }
+
+  try {
+    return await screepsBatchRequest(
+      requests.map((request) => ({
+        baseUrl,
+        endpoint: request.endpoint,
+        method: request.method,
+        query: request.query,
+        body: request.body,
+        token,
+        username,
+      })),
+      { maxConcurrency: Math.min(maxConcurrency, requests.length) }
+    );
+  } catch {
+    return [];
+  }
+}
+
 async function tryTerrain(
   baseUrl: string,
   token: string,
@@ -814,30 +844,31 @@ async function tryTerrain(
     return { terrain: cachedTerrain };
   }
 
-  for (const query of buildTerrainQueries(roomName, shard)) {
-    try {
-      const response = await screepsRequest({
-        baseUrl,
-        endpoint: "/api/game/room-terrain",
-        method: "GET",
-        query,
-        token,
-        username,
-      });
-      if (response.ok) {
-        const terrain = extractTerrain(response.data);
-        if (terrain) {
-          setTerrainToCache(baseUrl, roomName, terrain, shard);
-          return { terrain };
-        }
-        return response.data;
-      }
-    } catch {
+  const requests: RoomOverviewRequest[] = buildTerrainQueries(roomName, shard).map((query) => ({
+    endpoint: "/api/game/room-terrain",
+    method: "GET",
+    query,
+  }));
+  const responses = await requestCandidates(baseUrl, token, username, requests, 3);
+
+  let firstSuccessfulPayload: unknown;
+  for (const response of responses) {
+    if (!response.ok) {
       continue;
+    }
+
+    if (firstSuccessfulPayload === undefined) {
+      firstSuccessfulPayload = response.data;
+    }
+
+    const terrain = extractTerrain(response.data);
+    if (terrain) {
+      setTerrainToCache(baseUrl, roomName, terrain, shard);
+      return { terrain };
     }
   }
 
-  return undefined;
+  return firstSuccessfulPayload;
 }
 
 async function tryMapStats(
@@ -856,21 +887,21 @@ async function tryMapStats(
     bodies.push({ rooms: [roomName], statName: "owner0", shard: "shard0" });
   }
 
-  for (const body of bodies) {
-    try {
-      const response = await screepsRequest({
-        baseUrl,
-        endpoint: "/api/game/map-stats",
-        method: "POST",
-        body,
-        token,
-        username,
-      });
-      if (response.ok) {
-        return response.data;
-      }
-    } catch {
-      continue;
+  const responses = await requestCandidates(
+    baseUrl,
+    token,
+    username,
+    bodies.map((body) => ({
+      endpoint: "/api/game/map-stats",
+      method: "POST",
+      body,
+    })),
+    3
+  );
+
+  for (const response of responses) {
+    if (response.ok) {
+      return response.data;
     }
   }
 
@@ -933,23 +964,11 @@ async function tryRoomOverview(
   shard?: string
 ): Promise<unknown> {
   const requests = buildRoomOverviewRequests(roomName, shard);
-  for (const request of requests) {
-    try {
-      const response = await screepsRequest({
-        baseUrl,
-        endpoint: request.endpoint,
-        method: request.method,
-        query: request.query,
-        body: request.body,
-        token,
-        username,
-      });
+  const responses = await requestCandidates(baseUrl, token, username, requests, 6);
 
-      if (response.ok) {
-        return response.data;
-      }
-    } catch {
-      continue;
+  for (const response of responses) {
+    if (response.ok) {
+      return response.data;
     }
   }
 
@@ -1010,28 +1029,16 @@ async function tryRoomObjects(
   shard?: string
 ): Promise<unknown> {
   const requests = buildRoomObjectsRequests(roomName, shard);
-  for (const request of requests) {
-    try {
-      const response = await screepsRequest({
-        baseUrl,
-        endpoint: request.endpoint,
-        method: request.method,
-        query: request.query,
-        body: request.body,
-        token,
-        username,
-      });
+  const responses = await requestCandidates(baseUrl, token, username, requests, 6);
 
-      if (!response.ok) {
-        continue;
-      }
-
-      const records = extractRoomObjectRecords(response.data);
-      if (records.length > 0) {
-        return response.data;
-      }
-    } catch {
+  for (const response of responses) {
+    if (!response.ok) {
       continue;
+    }
+
+    const records = extractRoomObjectRecords(response.data);
+    if (records.length > 0) {
+      return response.data;
     }
   }
 
