@@ -187,6 +187,12 @@ export function LoginPanel() {
     setActiveAccountId(account.id);
   }, [accounts, selectedAccountId, servers, setActiveAccountId]);
 
+  useEffect(() => {
+    void router.prefetch("/user");
+    void router.prefetch("/rooms");
+    void router.prefetch("/rankings");
+  }, [router]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
@@ -215,8 +221,13 @@ export function LoginPanel() {
         throw new Error(t("login.tokenEmpty"));
       }
 
-      if (authMode === "token") {
+      const shouldRequireProfileProbe = authMode === "token" && !selectedAccountId;
+      try {
         profileProbe = await probeProfileEndpoint(baseUrl, resolvedToken, probeUsername);
+      } catch (error) {
+        if (shouldRequireProfileProbe) {
+          throw error;
+        }
       }
 
       const fallbackName =

@@ -95,6 +95,32 @@ a {
   min-height: calc(100vh - 46px);
 }
 
+.route-transition {
+  display: grid;
+  justify-items: center;
+  width: min(100%, 820px);
+  padding: 8px 10px;
+}
+
+.route-transition-logo {
+  width: clamp(260px, 58vw, 620px);
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 8px 24px rgba(33, 55, 133, 0.32));
+}
+
+.route-transition-a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .auth-shell {
   width: 100%;
   max-width: 100%;
@@ -792,6 +818,29 @@ a {
   color: var(--text-soft);
 }
 
+.nav-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nav-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #9ca2ae;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nav-link:hover .nav-icon,
+.nav-link.active .nav-icon {
+  color: currentColor;
+}
+
 .nav-link:hover {
   border-color: var(--border-strong);
   color: var(--text-main);
@@ -837,6 +886,17 @@ a {
   min-width: 0;
   max-width: 100%;
   padding: 14px;
+}
+
+.route-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
 }
 
 .dashboard-header {
@@ -1457,6 +1517,61 @@ a {
   font-size: 0.7rem;
 }
 
+.room-detail-search-card {
+  margin-top: 0;
+}
+
+.room-detail-terrain {
+  display: grid;
+  justify-content: flex-start;
+}
+
+.room-detail-terrain .terrain-canvas,
+.room-detail-terrain .terrain-fallback {
+  width: 100%;
+  max-width: 220px;
+}
+
+.room-detail-terrain.room-detail-terrain-lg .terrain-canvas,
+.room-detail-terrain.room-detail-terrain-lg .terrain-fallback {
+  max-width: 360px;
+}
+
+.room-detail-terrain.room-detail-terrain-md .terrain-canvas,
+.room-detail-terrain.room-detail-terrain-md .terrain-fallback {
+  max-width: 220px;
+}
+
+.room-layer-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.room-object-legend {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-object-chip {
+  color: var(--text-main);
+  gap: 7px;
+}
+
+.room-object-chip strong {
+  color: #d7dff8;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.room-object-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
 .control-row {
   margin-top: 10px;
   display: flex;
@@ -1664,6 +1779,10 @@ a {
       auto-fill,
       minmax(var(--room-thumb-card-width), var(--room-thumb-card-width))
     );
+  }
+
+  .room-layer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .profile-detail-grid {

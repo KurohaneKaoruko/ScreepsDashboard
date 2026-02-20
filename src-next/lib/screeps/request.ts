@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { QueryParams, ScreepsRequest, ScreepsResponse } from "./types";
+import { hasTauriRuntime } from "../runtime/platform";
 
 const DEFAULT_SERVER_URL = "https://screeps.com";
 const FALLBACK_TIMEOUT_MS = 20_000;
+type RequestRuntimeMode = "unknown" | "tauri" | "browser";
+let requestRuntimeMode: RequestRuntimeMode = "unknown";
 
 function normalizeEndpoint(endpoint: string): string {
   return endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
@@ -103,11 +106,20 @@ export async function screepsRequest(request: ScreepsRequest): Promise<ScreepsRe
     method: request.method ?? "GET",
   };
 
-  try {
-    return await invoke<ScreepsResponse>("screeps_request", {
-      request: normalizedRequest,
-    });
-  } catch {
-    return browserFallbackRequest(normalizedRequest);
+  if (requestRuntimeMode === "unknown") {
+    requestRuntimeMode = hasTauriRuntime() ? "tauri" : "browser";
   }
+
+  if (requestRuntimeMode === "tauri") {
+    try {
+      const response = await invoke<ScreepsResponse>("screeps_request", {
+        request: normalizedRequest,
+      });
+      return response;
+    } catch {
+      requestRuntimeMode = "browser";
+    }
+  }
+
+  return browserFallbackRequest(normalizedRequest);
 }

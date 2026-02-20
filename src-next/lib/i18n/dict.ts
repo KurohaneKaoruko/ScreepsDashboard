@@ -24,7 +24,9 @@ const zh = {
   "nav.userLabel": "用户数据",
   "nav.userDesc": "查看账号信息与房间缩略图。",
   "nav.roomsLabel": "房间",
-  "nav.roomsDesc": "搜索房间并查看公开地图信息。",
+  "nav.roomsDesc": "搜索房间并查看可视化地图详情。",
+  "nav.consoleLabel": "控制台",
+  "nav.consoleDesc": "Console tools and script output.",
   "nav.rankingsLabel": "排行榜",
   "nav.rankingsDesc": "查看全量维度排行榜。",
   "nav.settingsLabel": "设置",
@@ -121,6 +123,8 @@ const zh = {
 
   "placeholder.tag": "计划中",
   "placeholder.hint": "该页面暂未实现。",
+  "console.title": "Console",
+  "console.description": "The console page is under development.",
   "logs.title": "日志",
   "logs.description": "日志功能已移除。",
 
@@ -163,6 +167,14 @@ const zh = {
   "rooms.detailSummary": "房间摘要",
   "rooms.structures": "建筑",
   "rooms.creeps": "Creeps",
+  "rooms.minerals": "Minerals",
+  "rooms.objects": "对象",
+  "rooms.visualMap": "房间可视化地图",
+  "rooms.visualLegend": "对象图例",
+  "rooms.objectDistribution": "对象分布",
+  "rooms.layerResources": "资源层",
+  "rooms.layerStructures": "建筑层",
+  "rooms.layerCreeps": "Creep 层",
   "rooms.detailEmpty": "暂无可展示数据。",
 
   "rankings.title": "排行榜",
@@ -206,7 +218,9 @@ const en: Record<TranslationKey, string> = {
   "nav.userLabel": "User",
   "nav.userDesc": "Profile, resources, and room thumbnails.",
   "nav.roomsLabel": "Rooms",
-  "nav.roomsDesc": "Search rooms and browse public map data.",
+  "nav.roomsDesc": "Search rooms and open visual map detail.",
+  "nav.consoleLabel": "Console",
+  "nav.consoleDesc": "Console tools and script output.",
   "nav.rankingsLabel": "Rankings",
   "nav.rankingsDesc": "Browse rankings with full dimensions.",
   "nav.settingsLabel": "Settings",
@@ -303,6 +317,8 @@ const en: Record<TranslationKey, string> = {
 
   "placeholder.tag": "Planned",
   "placeholder.hint": "This page is not implemented yet.",
+  "console.title": "Console",
+  "console.description": "The console page is under development.",
   "logs.title": "Logs",
   "logs.description": "Logs were removed.",
 
@@ -345,6 +361,14 @@ const en: Record<TranslationKey, string> = {
   "rooms.detailSummary": "Summary",
   "rooms.structures": "Structures",
   "rooms.creeps": "Creeps",
+  "rooms.minerals": "Minerals",
+  "rooms.objects": "Objects",
+  "rooms.visualMap": "Visual Room Map",
+  "rooms.visualLegend": "Object Legend",
+  "rooms.objectDistribution": "Object Distribution",
+  "rooms.layerResources": "Resources Layer",
+  "rooms.layerStructures": "Structures Layer",
+  "rooms.layerCreeps": "Creeps Layer",
   "rooms.detailEmpty": "No data available.",
 
   "rankings.title": "Rankings",
@@ -368,3 +392,6 @@ export const messages: Record<Locale, Record<TranslationKey, string>> = {
 };
 
 export const defaultLocale: Locale = "zh-CN";
+
+
+

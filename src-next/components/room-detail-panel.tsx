@@ -1,22 +1,75 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
 import { fetchRoomDetailSnapshot } from "../lib/screeps/room-detail";
+import { ScreepsRealtimeClient } from "../lib/screeps/realtime-client";
+import { buildRoomMapRealtimeChannels } from "../lib/screeps/room-map-realtime";
+import type { RoomCreepSummary, RoomObjectSummary } from "../lib/screeps/types";
 import { useAuthStore } from "../stores/auth-store";
+import { MetricBar } from "./metric-bar";
 import { MetricCell } from "./metric-cell";
-import { TerrainThumbnail } from "./terrain-thumbnail";
+import { TerrainThumbnail, resolveRoomObjectColor } from "./terrain-thumbnail";
 
 interface RoomDetailPanelProps {
   roomName: string;
+  roomShard?: string | null;
 }
 
 interface StructureGroup {
   type: string;
   count: number;
   avgHitsPercent?: number;
+}
+
+interface ObjectTypeGroup {
+  type: string;
+  count: number;
+  percent: number;
+}
+
+interface CreepRoleGroup {
+  role: string;
+  count: number;
+  percent: number;
+  avgTtl?: number;
+}
+
+const ROOM_NAME_PATTERN = /^[WE]\d+[NS]\d+$/;
+const SHARD_PATTERN = /^shard\d+$/i;
+const DEFAULT_REALTIME_SHARDS = ["shard0", "shard1", "shard2", "shard3"] as const;
+const CREEP_OBJECT_TYPES = new Set(["creep", "powerCreep"]);
+const RESOURCE_OBJECT_TYPES = new Set(["source", "mineral", "controller", "powerBank", "keeperLair", "portal"]);
+const STRUCTURE_OBJECT_TYPES = new Set([
+  "constructedWall",
+  "container",
+  "extension",
+  "extractor",
+  "factory",
+  "invaderCore",
+  "lab",
+  "link",
+  "nuker",
+  "observer",
+  "rampart",
+  "road",
+  "spawn",
+  "storage",
+  "terminal",
+  "tower",
+  "wall",
+]);
+
+function normalizeShardValue(value: string | null | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return SHARD_PATTERN.test(normalized) ? normalized : undefined;
 }
 
 function formatNumber(value: number | undefined): string {
@@ -26,8 +79,9 @@ function formatNumber(value: number | undefined): string {
   return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
 }
 
-function formatCoordinate(x: number, y: number): string {
-  return `(${x}, ${y})`;
+function formatObjectLabel(value: string): string {
+  const spaced = value.replace(/([a-z])([A-Z])/g, "$1 $2");
+  return `${spaced.slice(0, 1).toUpperCase()}${spaced.slice(1)}`;
 }
 
 function summarizeStructures(
@@ -57,62 +111,239 @@ function summarizeStructures(
     .sort((left, right) => right.count - left.count || left.type.localeCompare(right.type));
 }
 
-export function RoomDetailPanel({ roomName }: RoomDetailPanelProps) {
+function summarizeObjectTypes(objects: RoomObjectSummary[]): ObjectTypeGroup[] {
+  if (objects.length === 0) {
+    return [];
+  }
+
+  const bucket = new Map<string, number>();
+  for (const object of objects) {
+    bucket.set(object.type, (bucket.get(object.type) ?? 0) + 1);
+  }
+
+  const total = objects.length;
+  return [...bucket.entries()]
+    .map(([type, count]) => ({
+      type,
+      count,
+      percent: Number(((count / total) * 100).toFixed(2)),
+    }))
+    .sort((left, right) => right.count - left.count || left.type.localeCompare(right.type));
+}
+
+function summarizeCreepRoles(creeps: RoomCreepSummary[]): CreepRoleGroup[] {
+  if (creeps.length === 0) {
+    return [];
+  }
+
+  const bucket = new Map<string, { count: number; ttlTotal: number; ttlCount: number }>();
+  for (const creep of creeps) {
+    const role = creep.role?.trim() || "unknown";
+    const current = bucket.get(role) ?? { count: 0, ttlTotal: 0, ttlCount: 0 };
+    current.count += 1;
+    if (creep.ttl !== undefined) {
+      current.ttlTotal += creep.ttl;
+      current.ttlCount += 1;
+    }
+    bucket.set(role, current);
+  }
+
+  const total = creeps.length;
+  return [...bucket.entries()]
+    .map(([role, value]) => ({
+      role,
+      count: value.count,
+      percent: Number(((value.count / total) * 100).toFixed(2)),
+      avgTtl: value.ttlCount > 0 ? Number((value.ttlTotal / value.ttlCount).toFixed(2)) : undefined,
+    }))
+    .sort((left, right) => right.count - left.count || left.role.localeCompare(right.role));
+}
+
+function isCreepObjectType(type: string): boolean {
+  return CREEP_OBJECT_TYPES.has(type);
+}
+
+function isResourceObjectType(type: string): boolean {
+  return RESOURCE_OBJECT_TYPES.has(type);
+}
+
+function isStructureObjectType(type: string): boolean {
+  return STRUCTURE_OBJECT_TYPES.has(type);
+}
+
+function buildRoomRealtimeChannels(roomName: string, shard?: string): string[] {
+  const normalizedRoom = roomName.trim().toUpperCase();
+  if (!normalizedRoom) {
+    return [];
+  }
+
+  const channels = new Set<string>([
+    `room:${normalizedRoom}`,
+    `room:${normalizedRoom.toLowerCase()}`,
+  ]);
+
+  const shards = shard ? [shard] : [...DEFAULT_REALTIME_SHARDS];
+  for (const shardName of shards) {
+    channels.add(`room:${shardName}/${normalizedRoom}`);
+  }
+
+  for (const channel of buildRoomMapRealtimeChannels(normalizedRoom, shard)) {
+    channels.add(channel);
+  }
+
+  return [...channels];
+}
+
+export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
   const { t } = useI18n();
+  const router = useRouter();
   const session = useAuthStore((state) => state.session);
-  const [structureFilter, setStructureFilter] = useState("");
-  const [creepFilter, setCreepFilter] = useState("");
+
+  const [roomInput, setRoomInput] = useState(roomName);
+  const [shardInput, setShardInput] = useState(roomShard ?? "");
+
+  const lastRealtimeMutateAt = useRef(0);
 
   const normalizedName = useMemo(() => roomName.trim().toUpperCase(), [roomName]);
+  const normalizedShard = useMemo(() => normalizeShardValue(roomShard), [roomShard]);
+  const normalizedInputName = useMemo(() => roomInput.trim().toUpperCase(), [roomInput]);
+  const normalizedInputShard = useMemo(() => normalizeShardValue(shardInput), [shardInput]);
+  const inputRoomValid = ROOM_NAME_PATTERN.test(normalizedInputName);
 
-  if (!normalizedName) {
-    return (
-      <section className="panel dashboard-panel">
-        <h1 className="page-title">{t("rooms.detailTitle")}</h1>
-        <p className="hint-text">{t("rooms.searchHint")}</p>
-      </section>
-    );
-  }
+  const targetHref = useMemo(() => {
+    if (!inputRoomValid) {
+      return "";
+    }
 
-  if (!session) {
-    return null;
-  }
+    const searchParams = new URLSearchParams({ name: normalizedInputName });
+    if (normalizedInputShard) {
+      searchParams.set("shard", normalizedInputShard);
+    }
+    return `/rooms?${searchParams.toString()}`;
+  }, [inputRoomValid, normalizedInputName, normalizedInputShard]);
+
+  useEffect(() => {
+    setRoomInput(normalizedName);
+  }, [normalizedName]);
+
+  useEffect(() => {
+    setShardInput(normalizedShard ?? "");
+  }, [normalizedShard]);
+
+  const swrKey =
+    session && normalizedName
+      ? ["room-detail", session.baseUrl, session.token, normalizedName, normalizedShard ?? ""]
+      : null;
 
   const { data, error, isLoading, mutate } = useSWR(
-    ["room-detail", session.baseUrl, session.token, normalizedName],
-    () => fetchRoomDetailSnapshot(session, normalizedName),
+    swrKey,
+    () => {
+      if (!session) {
+        throw new Error("Session unavailable.");
+      }
+      return fetchRoomDetailSnapshot(session, normalizedName, normalizedShard);
+    },
     {
+      refreshInterval: normalizedName ? 6_000 : 0,
+      dedupingInterval: 2_000,
       revalidateOnFocus: false,
-      dedupingInterval: 8_000,
+      revalidateOnReconnect: true,
     }
   );
 
-  const structureGroups = summarizeStructures(data?.structures ?? []);
-  const creeps = [...(data?.creeps ?? [])].sort(
-    (left, right) => (right.ttl ?? -1) - (left.ttl ?? -1)
+  const realtimeChannels = useMemo(
+    () => buildRoomRealtimeChannels(normalizedName, normalizedShard),
+    [normalizedName, normalizedShard]
   );
-  const normalizedStructureFilter = structureFilter.trim().toLowerCase();
-  const normalizedCreepFilter = creepFilter.trim().toLowerCase();
-  const visibleStructureGroups = structureGroups.filter((item) =>
-    normalizedStructureFilter ? item.type.toLowerCase().includes(normalizedStructureFilter) : true
-  );
-  const visibleCreeps = creeps.filter((item) => {
-    if (!normalizedCreepFilter) {
-      return true;
+
+  useEffect(() => {
+    if (!session || !normalizedName || realtimeChannels.length === 0) {
+      return;
     }
 
-    return (
-      item.name.toLowerCase().includes(normalizedCreepFilter) ||
-      (item.role ?? "").toLowerCase().includes(normalizedCreepFilter)
+    const realtimeClient = new ScreepsRealtimeClient({
+      baseUrl: session.baseUrl,
+      token: session.token,
+      reconnect: true,
+      reconnectBaseMs: 1_200,
+      reconnectMaxMs: 20_000,
+    });
+
+    const handleRealtime = () => {
+      const now = Date.now();
+      if (now - lastRealtimeMutateAt.current < 1_200) {
+        return;
+      }
+      lastRealtimeMutateAt.current = now;
+      void mutate();
+    };
+
+    const unsubs = realtimeChannels.map((channel) =>
+      realtimeClient.subscribe(channel, handleRealtime)
     );
-  });
+
+    realtimeClient.connect();
+
+    return () => {
+      for (const unsubscribe of unsubs) {
+        unsubscribe();
+      }
+      realtimeClient.disconnect();
+    };
+  }, [mutate, normalizedName, realtimeChannels, session]);
+
+  const roomObjects = data?.objects ?? [];
+  const objectTypeGroups = useMemo(() => summarizeObjectTypes(roomObjects), [roomObjects]);
+  const structureGroups = useMemo(() => summarizeStructures(data?.structures ?? []), [data?.structures]);
+  const creepRoleGroups = useMemo(() => summarizeCreepRoles(data?.creeps ?? []), [data?.creeps]);
+
+  const topObjectTypeGroups = objectTypeGroups.slice(0, 8);
+  const topStructureGroups = structureGroups.slice(0, 8);
+  const topCreepRoleGroups = creepRoleGroups.slice(0, 8);
+
+  const resourceObjects = useMemo(
+    () => roomObjects.filter((item) => isResourceObjectType(item.type)),
+    [roomObjects]
+  );
+  const structureObjects = useMemo(
+    () => roomObjects.filter((item) => isStructureObjectType(item.type)),
+    [roomObjects]
+  );
+  const creepObjects = useMemo(
+    () => roomObjects.filter((item) => isCreepObjectType(item.type)),
+    [roomObjects]
+  );
+
+  const roomLabel = data?.roomName ?? normalizedName;
+  const shardLabel = data?.shard ?? normalizedShard;
+  const roomDisplayLabel = roomLabel
+    ? shardLabel
+      ? `${roomLabel} @ ${shardLabel}`
+      : roomLabel
+    : "";
+
+  const openInputRoom = useCallback(() => {
+    if (!inputRoomValid || !targetHref) {
+      return;
+    }
+    router.push(targetHref);
+  }, [inputRoomValid, router, targetHref]);
+
+  const handleRoomSearchSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      openInputRoom();
+    },
+    [openInputRoom]
+  );
 
   return (
     <section className="panel dashboard-panel">
       <header className="dashboard-header">
         <div>
           <h1 className="page-title">
-            {t("rooms.detailTitle")}: {normalizedName}
+            {t("rooms.detailTitle")}
+            {roomDisplayLabel ? `: ${roomDisplayLabel}` : ""}
           </h1>
           <p className="page-subtitle">{t("rooms.detailSubtitle")}</p>
         </div>
@@ -121,11 +352,52 @@ export function RoomDetailPanel({ roomName }: RoomDetailPanelProps) {
           <Link className="ghost-button" href="/rooms">
             {t("rooms.title")}
           </Link>
-          <button className="secondary-button" onClick={() => void mutate()}>
+          <button
+            className="secondary-button"
+            onClick={() => void mutate()}
+            disabled={!normalizedName || !session}
+          >
             {t("common.refreshNow")}
           </button>
         </div>
       </header>
+
+      <article className="card room-search-card room-detail-search-card">
+        <h2>{t("rooms.searchTitle")}</h2>
+        <form className="control-row" onSubmit={handleRoomSearchSubmit}>
+          <label className="field compact-field">
+            <span>{t("rooms.searchLabel")}</span>
+            <input
+              value={roomInput}
+              onChange={(event) => setRoomInput(event.currentTarget.value)}
+              placeholder="W8N3"
+            />
+          </label>
+          <label className="field compact-field">
+            <span>Shard</span>
+            <input
+              value={shardInput}
+              onChange={(event) => setShardInput(event.currentTarget.value)}
+              placeholder="shard3"
+            />
+          </label>
+          <button className="secondary-button" type="submit" disabled={!inputRoomValid}>
+            {t("rooms.openDetail")}
+          </button>
+          {!inputRoomValid ? <span className="hint-text">{t("rooms.searchHint")}</span> : null}
+        </form>
+      </article>
+
+      {!session ? (
+        <article className="card">
+          <p className="hint-text">{t("rooms.loginToOpenDetail")}</p>
+          <div className="inline-actions">
+            <Link className="secondary-button" href="/login">
+              {t("nav.loginLabel")}
+            </Link>
+          </div>
+        </article>
+      ) : null}
 
       {error && !data ? (
         <p className="error-text">
@@ -140,7 +412,9 @@ export function RoomDetailPanel({ roomName }: RoomDetailPanelProps) {
         </div>
       ) : null}
 
-      {data ? (
+      {session && !normalizedName ? <p className="hint-text">{t("rooms.searchHint")}</p> : null}
+
+      {session && data ? (
         <div className="section-stack">
           <article className="card">
             <h2>{t("rooms.detailSummary")}</h2>
@@ -157,67 +431,55 @@ export function RoomDetailPanel({ roomName }: RoomDetailPanelProps) {
                 align="right"
               />
               <MetricCell label={t("rooms.sources")} value={String(data.sources.length)} align="right" />
-              <MetricCell label="Minerals" value={String(data.minerals.length)} align="right" />
-              <MetricCell label={t("rooms.structures")} value={String(data.structures.length)} align="right" />
-              <MetricCell label={t("rooms.creeps")} value={String(data.creeps.length)} align="right" />
+              <MetricCell label={t("rooms.minerals")} value={String(data.minerals.length)} align="right" />
+              <MetricCell label={t("rooms.structures")} value={String(structureObjects.length)} align="right" />
+              <MetricCell label={t("rooms.creeps")} value={String(creepObjects.length)} align="right" />
+              <MetricCell label={t("rooms.objects")} value={String(roomObjects.length)} align="right" />
             </div>
           </article>
 
-          <div className="card-grid">
-            <article className="card">
-              <h2>{t("rooms.terrain")}</h2>
-              <div className="room-detail-terrain">
-                <TerrainThumbnail encoded={data.terrainEncoded} roomName={normalizedName} size={220} />
+          <div className="card-grid room-visual-grid">
+            <article className="card room-visual-main-card">
+              <h2>{t("rooms.visualMap")}</h2>
+              <div className="room-detail-terrain room-detail-terrain-lg">
+                <TerrainThumbnail
+                  encoded={data.terrainEncoded}
+                  roomName={roomLabel}
+                  size={360}
+                  roomObjects={roomObjects}
+                />
               </div>
-              <div className="inline-actions">
-                {data.sources.map((source) => (
-                  <span className="entity-chip" key={`src-${source.x}-${source.y}`}>
-                    S {formatCoordinate(source.x, source.y)}
-                  </span>
-                ))}
-                {data.minerals.map((mineral) => (
-                  <span className="entity-chip" key={`min-${mineral.x}-${mineral.y}`}>
-                    {mineral.type ?? "M"} {formatCoordinate(mineral.x, mineral.y)}
-                  </span>
-                ))}
-              </div>
+              {topObjectTypeGroups.length ? (
+                <div className="room-object-legend" aria-label={t("rooms.visualLegend")}>
+                  {topObjectTypeGroups.map((item) => (
+                    <span className="entity-chip room-object-chip" key={`legend-${item.type}`}>
+                      <span
+                        aria-hidden="true"
+                        className="room-object-dot"
+                        style={{ backgroundColor: resolveRoomObjectColor(item.type) }}
+                      />
+                      <span>{formatObjectLabel(item.type)}</span>
+                      <strong>{item.count}</strong>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="hint-text">{t("rooms.detailEmpty")}</p>
+              )}
             </article>
 
             <article className="card">
-              <h2>{t("rooms.structures")}</h2>
-              <div className="control-row">
-                <label className="field compact-field">
-                  <span>Filter</span>
-                  <input
-                    value={structureFilter}
-                    onChange={(event) => setStructureFilter(event.currentTarget.value)}
-                    placeholder="spawn / extension / tower"
-                  />
-                </label>
-                <span className="entity-chip">Visible {visibleStructureGroups.length}</span>
-              </div>
-              {visibleStructureGroups.length ? (
-                <div className="dense-table-wrap">
-                  <table className="dense-table">
-                    <thead>
-                      <tr>
-                        <th>Type</th>
-                        <th className="numeric">Count</th>
-                        <th className="numeric">Avg HP%</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleStructureGroups.map((item) => (
-                        <tr key={item.type}>
-                          <td>{item.type}</td>
-                          <td className="numeric">{item.count}</td>
-                          <td className="numeric">
-                            {item.avgHitsPercent === undefined ? "N/A" : `${item.avgHitsPercent.toFixed(2)}%`}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <h2>{t("rooms.objectDistribution")}</h2>
+              {topObjectTypeGroups.length ? (
+                <div className="metric-bar-list">
+                  {topObjectTypeGroups.map((item) => (
+                    <MetricBar
+                      key={`object-distribution-${item.type}`}
+                      label={formatObjectLabel(item.type)}
+                      value={`${item.count} (${item.percent.toFixed(1)}%)`}
+                      percent={item.percent}
+                    />
+                  ))}
                 </div>
               ) : (
                 <p className="hint-text">{t("rooms.detailEmpty")}</p>
@@ -225,46 +487,87 @@ export function RoomDetailPanel({ roomName }: RoomDetailPanelProps) {
             </article>
           </div>
 
-          <article className="card">
-            <h2>{t("rooms.creeps")}</h2>
-            <div className="control-row">
-              <label className="field compact-field">
-                <span>Filter</span>
-                <input
-                  value={creepFilter}
-                  onChange={(event) => setCreepFilter(event.currentTarget.value)}
-                  placeholder="name / role"
+          <div className="card-grid room-layer-grid">
+            <article className="card">
+              <h2>{t("rooms.layerResources")}</h2>
+              <div className="room-detail-terrain room-detail-terrain-md">
+                <TerrainThumbnail
+                  encoded={data.terrainEncoded}
+                  roomName={roomLabel}
+                  size={220}
+                  roomObjects={resourceObjects}
                 />
-              </label>
-              <span className="entity-chip">Visible {visibleCreeps.length}</span>
-            </div>
-            {visibleCreeps.length ? (
-              <div className="dense-table-wrap">
-                <table className="dense-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Role</th>
-                      <th>Position</th>
-                      <th className="numeric">TTL</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleCreeps.map((item) => (
-                      <tr key={item.name}>
-                        <td>{item.name}</td>
-                        <td>{item.role ?? "N/A"}</td>
-                        <td>{formatCoordinate(item.x, item.y)}</td>
-                        <td className="numeric">{item.ttl ?? "N/A"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
-            ) : (
-              <p className="hint-text">{t("rooms.detailEmpty")}</p>
-            )}
-          </article>
+              <div className="inline-actions">
+                <span className="entity-chip">
+                  {t("rooms.sources")}: {data.sources.length}
+                </span>
+                <span className="entity-chip">
+                  {t("rooms.minerals")}: {data.minerals.length}
+                </span>
+              </div>
+            </article>
+
+            <article className="card">
+              <h2>{t("rooms.layerStructures")}</h2>
+              <div className="room-detail-terrain room-detail-terrain-md">
+                <TerrainThumbnail
+                  encoded={data.terrainEncoded}
+                  roomName={roomLabel}
+                  size={220}
+                  roomObjects={structureObjects}
+                />
+              </div>
+              {topStructureGroups.length ? (
+                <div className="metric-bar-list">
+                  {topStructureGroups.map((item) => (
+                    <MetricBar
+                      key={`structure-health-${item.type}`}
+                      label={formatObjectLabel(item.type)}
+                      value={
+                        item.avgHitsPercent === undefined
+                          ? `${item.count}`
+                          : `${item.count} / ${item.avgHitsPercent.toFixed(1)}%`
+                      }
+                      percent={item.avgHitsPercent}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="hint-text">{t("rooms.detailEmpty")}</p>
+              )}
+            </article>
+
+            <article className="card">
+              <h2>{t("rooms.layerCreeps")}</h2>
+              <div className="room-detail-terrain room-detail-terrain-md">
+                <TerrainThumbnail
+                  encoded={data.terrainEncoded}
+                  roomName={roomLabel}
+                  size={220}
+                  roomObjects={creepObjects}
+                />
+              </div>
+              {topCreepRoleGroups.length ? (
+                <div className="metric-bar-list">
+                  {topCreepRoleGroups.map((item) => (
+                    <MetricBar
+                      key={`creep-role-${item.role}`}
+                      label={item.role}
+                      value={
+                        item.avgTtl === undefined
+                          ? `${item.count} (${item.percent.toFixed(1)}%)`
+                          : `${item.count} (${item.percent.toFixed(1)}%) TTL ${item.avgTtl.toFixed(0)}`
+                      }
+                      percent={item.percent}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="hint-text">{t("rooms.detailEmpty")}</p>
+              )}
+            </article>
+          </div>
         </div>
       ) : null}
     </section>

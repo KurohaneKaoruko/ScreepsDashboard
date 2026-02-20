@@ -1,10 +1,10 @@
-import { AppShell } from "../../components/app-shell";
-import { PublicRoomsPanel } from "../../components/public-rooms-panel";
+import { Suspense } from "react";
+import { RoomDetailRoute } from "../../components/room-detail-route";
 
 export default function RoomsPage() {
   return (
-    <AppShell>
-      <PublicRoomsPanel />
-    </AppShell>
+    <Suspense>
+      <RoomDetailRoute />
+    </Suspense>
   );
 }

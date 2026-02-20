@@ -5,6 +5,7 @@ import type { MouseEvent } from "react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LoginPanel } from "../../components/login-panel";
+import { RouteTransition } from "../../components/route-transition";
 import { WindowControls } from "../../components/window-controls";
 import { useAuthHydration } from "../../components/auth-guard";
 import { useI18n } from "../../lib/i18n/use-i18n";
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const hasHydrated = useAuthHydration();
   const { t } = useI18n();
   const [desktopWindowFrame, setDesktopWindowFrame] = useState(false);
+  const [showRedirectTransition, setShowRedirectTransition] = useState(false);
 
   useEffect(() => {
     setDesktopWindowFrame(isDesktopWindowFrameAvailable());
@@ -31,6 +33,20 @@ export default function LoginPage() {
       router.replace("/user");
     }
   }, [hasHydrated, router, session]);
+
+  useEffect(() => {
+    if (!session) {
+      setShowRedirectTransition(false);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowRedirectTransition(true);
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [session]);
 
   function handleTopbarMouseDown(event: MouseEvent<HTMLElement>) {
     if (event.button !== 0) {
@@ -73,23 +89,24 @@ export default function LoginPage() {
 
   if (!hasHydrated) {
     return (
-      <div className="auth-shell">
-        {loginShell}
-        <main className="page-center auth-shell-main">
-          <p className="hint-text">{t("common.loadingSession")}</p>
-        </main>
-      </div>
+      <main className="page-center">
+        <RouteTransition label={t("common.loadingSession")} message={t("auth.loading")} />
+      </main>
     );
   }
 
   if (session) {
+    if (!showRedirectTransition) {
+      return null;
+    }
+
     return (
-      <div className="auth-shell">
-        {loginShell}
-        <main className="page-center auth-shell-main">
-          <p className="hint-text">{t("common.redirectingDashboard")}</p>
-        </main>
-      </div>
+      <main className="page-center">
+        <RouteTransition
+          label={t("common.redirecting")}
+          message={t("common.redirectingDashboard")}
+        />
+      </main>
     );
   }
 

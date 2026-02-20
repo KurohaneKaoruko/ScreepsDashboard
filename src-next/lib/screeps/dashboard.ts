@@ -1,4 +1,6 @@
 import { normalizeBaseUrl, screepsRequest } from "./request";
+import { getRoomSummariesFromCache, setRoomSummariesToCache } from "./room-summary-cache";
+import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
 import type {
   DashboardSnapshot,
   QueryParams,
@@ -1513,8 +1515,11 @@ async function fetchRoomThumbnail(
   room: RoomSummary
 ): Promise<RoomThumbnail> {
   const roomKey = buildRoomThumbnailKey(room, baseUrl);
-  const cachedTerrain = ROOM_THUMBNAIL_CACHE.get(roomKey);
+  const cachedTerrain =
+    ROOM_THUMBNAIL_CACHE.get(roomKey) ??
+    getTerrainFromCache(baseUrl, room.name, room.shard);
   if (cachedTerrain) {
+    ROOM_THUMBNAIL_CACHE.set(roomKey, cachedTerrain);
     return toTerrainThumbnail(room, cachedTerrain);
   }
 
@@ -1568,6 +1573,7 @@ async function fetchRoomThumbnail(
         }
 
         ROOM_THUMBNAIL_CACHE.set(roomKey, terrainEncoded);
+        setTerrainToCache(baseUrl, room.name, terrainEncoded, room.shard);
         clearRoomThumbnailRetry(baseUrl, room);
         return toTerrainThumbnail(room, terrainEncoded);
       } catch {
@@ -1628,8 +1634,11 @@ async function fetchRoomThumbnails(session: ScreepsSession, rooms: RoomSummary[]
   const now = Date.now();
   return mapWithConcurrency(rooms, 4, (room) => {
     const roomKey = buildRoomThumbnailKey(room, session.baseUrl);
-    const cachedTerrain = ROOM_THUMBNAIL_CACHE.get(roomKey);
+    const cachedTerrain =
+      ROOM_THUMBNAIL_CACHE.get(roomKey) ??
+      getTerrainFromCache(session.baseUrl, room.name, room.shard);
     if (cachedTerrain) {
+      ROOM_THUMBNAIL_CACHE.set(roomKey, cachedTerrain);
       return Promise.resolve(toTerrainThumbnail(room, cachedTerrain));
     }
 
@@ -1731,6 +1740,7 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
   let safeRoomsPayload = roomsResponse?.ok ? roomsResponse.data : undefined;
   let safeStatsPayload = statsResponse?.ok ? statsResponse.data : undefined;
   const profileUserId = extractProfileUserId(safeProfileResponse.data);
+  const cachedRooms = getRoomSummariesFromCache(session.baseUrl, session.username);
 
   const profileHasStatsSignals = hasUsefulStatsPayload(safeProfileResponse.data);
   if (!hasUsefulStatsPayload(safeStatsPayload) && !profileHasStatsSignals) {
@@ -1746,7 +1756,9 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
   }
 
   const profileHasRooms = hasUsefulRoomsPayload(safeProfileResponse.data);
-  if (!hasUsefulRoomsPayload(safeRoomsPayload) && profileUserId) {
+  const shouldFetchRoomsFallback = !hasUsefulRoomsPayload(safeRoomsPayload) && cachedRooms.length === 0;
+
+  if (shouldFetchRoomsFallback && profileUserId) {
     try {
       const roomsWithId = await screepsRequest({
         baseUrl: session.baseUrl,
@@ -1764,7 +1776,7 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
     }
   }
 
-  if (!hasUsefulRoomsPayload(safeRoomsPayload) && !profileHasRooms) {
+  if (shouldFetchRoomsFallback && !hasUsefulRoomsPayload(safeRoomsPayload) && !profileHasRooms) {
     const fallbackRoomsPayload = await tryFallbackPayload(
       session,
       buildRoomsFallbackEndpoints(profileUserId),
@@ -1808,7 +1820,17 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
     }
   }
 
-  const parsedRooms = extractRooms(safeRoomsPayload, safeProfileResponse.data);
+  let parsedRooms = extractRooms(safeRoomsPayload, safeProfileResponse.data);
+  if (parsedRooms.length === 0 && cachedRooms.length > 0) {
+    parsedRooms = cachedRooms;
+  }
+  if (parsedRooms.length > 0) {
+    setRoomSummariesToCache(session.baseUrl, session.username, parsedRooms);
+    if (profile.username && profile.username !== session.username) {
+      setRoomSummariesToCache(session.baseUrl, profile.username, parsedRooms);
+    }
+  }
+
   const rooms = await hydrateRoomLevelsFromMapStats(session, parsedRooms);
   const roomThumbnails = await fetchRoomThumbnails(session, rooms);
 

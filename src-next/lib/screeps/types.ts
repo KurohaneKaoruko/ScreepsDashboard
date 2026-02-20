@@ -136,9 +136,22 @@ export interface RoomCreepSummary {
   ttl?: number;
 }
 
+export interface RoomObjectSummary {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  owner?: string;
+  name?: string;
+  hits?: number;
+  hitsMax?: number;
+  ttl?: number;
+}
+
 export interface RoomDetailSnapshot {
   fetchedAt: string;
   roomName: string;
+  shard?: string;
   owner?: string;
   controllerLevel?: number;
   energyAvailable?: number;
@@ -148,6 +161,7 @@ export interface RoomDetailSnapshot {
   minerals: RoomMineralSummary[];
   structures: RoomStructureSummary[];
   creeps: RoomCreepSummary[];
+  objects: RoomObjectSummary[];
 }
 
 export interface PublicLeaderboardEntry {

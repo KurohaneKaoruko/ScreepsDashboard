@@ -204,7 +204,11 @@ function pickRoomMapOverlay(
   );
 }
 
-export function DashboardPanel() {
+interface DashboardPanelProps {
+  onInitialLoadStateChange?: (isLoading: boolean) => void;
+}
+
+export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps) {
   const { t } = useI18n();
   const session = useAuthStore((state) => state.session);
   const refreshIntervalMs = useSettingsStore((state) => state.refreshIntervalMs);
@@ -218,7 +222,7 @@ export function DashboardPanel() {
     return null;
   }
 
-  const { data, error, isLoading } = useSWR(
+  const { data, error, isLoading, isValidating } = useSWR(
     ["dashboard", session.baseUrl, session.token, session.verifiedAt],
     () => fetchDashboardSnapshot(session),
     {
@@ -228,6 +232,8 @@ export function DashboardPanel() {
       revalidateOnReconnect: false,
     }
   );
+  const [showDelayedLoading, setShowDelayedLoading] = useState(false);
+  const [showDelayedError, setShowDelayedError] = useState(false);
 
   const profile = data?.profile;
   const avatarFallback = profile?.username?.slice(0, 1).toUpperCase() ?? "?";
@@ -356,6 +362,38 @@ export function DashboardPanel() {
   );
 
   useEffect(() => {
+    if (!data && (isLoading || isValidating)) {
+      const timer = window.setTimeout(() => {
+        setShowDelayedLoading(true);
+      }, 180);
+      return () => {
+        window.clearTimeout(timer);
+      };
+    }
+
+    setShowDelayedLoading(false);
+    return undefined;
+  }, [data, isLoading, isValidating]);
+
+  useEffect(() => {
+    onInitialLoadStateChange?.(!data && (isLoading || isValidating));
+  }, [data, isLoading, isValidating, onInitialLoadStateChange]);
+
+  useEffect(() => {
+    if (error && !data && !isLoading && !isValidating) {
+      const timer = window.setTimeout(() => {
+        setShowDelayedError(true);
+      }, 650);
+      return () => {
+        window.clearTimeout(timer);
+      };
+    }
+
+    setShowDelayedError(false);
+    return undefined;
+  }, [data, error, isLoading, isValidating]);
+
+  useEffect(() => {
     setAvatarCandidateIndex(0);
   }, [avatarCandidates.length, profile?.avatarUrl, profile?.username, session.baseUrl]);
 
@@ -442,11 +480,17 @@ export function DashboardPanel() {
     }));
   }
 
+  const shouldShowError = Boolean(error && !data && !isLoading && !isValidating && showDelayedError);
+  const shouldShowLoading = Boolean(
+    !data &&
+      ((isLoading || isValidating) ? showDelayedLoading : Boolean(error && !shouldShowError))
+  );
+
   return (
     <section className="panel dashboard-panel">
-      {error && !data ? <p className="error-text">{errorToMessage(error)}</p> : null}
+      {shouldShowError ? <p className="error-text">{errorToMessage(error)}</p> : null}
 
-      {isLoading && !data ? (
+      {shouldShowLoading ? (
         <div className="section-stack">
           <div className="skeleton-line" style={{ height: 110 }} />
           <div className="skeleton-line" style={{ height: 120 }} />
@@ -569,10 +613,16 @@ export function DashboardPanel() {
                         {group.rooms.map((room) => {
                           const roomOverlay = pickRoomMapOverlay(roomMapOverlays, room.name, room.shard);
                           const roomKey = room.shard ? `${room.shard}/${room.name}` : room.name;
+                          const roomSearchParams = new URLSearchParams({
+                            name: room.name,
+                          });
+                          if (room.shard) {
+                            roomSearchParams.set("shard", room.shard);
+                          }
                           return (
                             <Link
                               className="room-thumb-card"
-                              href={`/user/room?name=${encodeURIComponent(room.name)}`}
+                              href={`/rooms?${roomSearchParams.toString()}`}
                               key={roomKey}
                             >
                               <div className="room-thumb-head">
