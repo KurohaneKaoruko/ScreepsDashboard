@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { basename } from "node:path";
 import {
   normalizeVersion,
   projectRoot,
@@ -85,6 +86,54 @@ function run(command, args, captureOutput = false) {
     throw new Error(`Command failed (${result.status}): ${fullCommand}`);
   }
   return captureOutput ? (result.stdout ?? "").trim() : "";
+}
+
+function resolvePackageManagerRunArgs(scriptName) {
+  const execPath = process.env.npm_execpath;
+  if (execPath) {
+    const lowerExec = execPath.toLowerCase();
+    const isJsEntry =
+      lowerExec.endsWith(".js") || lowerExec.endsWith(".cjs") || lowerExec.endsWith(".mjs");
+    if (isJsEntry) {
+      return [process.execPath, [execPath, "run", scriptName]];
+    }
+    return [execPath, ["run", scriptName]];
+  }
+
+  const userAgent = (process.env.npm_config_user_agent ?? "").toLowerCase();
+  if (userAgent.startsWith("pnpm/")) {
+    return ["pnpm", ["run", scriptName]];
+  }
+  if (userAgent.startsWith("yarn/")) {
+    return ["yarn", ["run", scriptName]];
+  }
+  return ["npm", ["run", scriptName]];
+}
+
+function getPackageManagerName() {
+  const execPath = (process.env.npm_execpath ?? "").toLowerCase();
+  if (execPath.includes("pnpm")) {
+    return "pnpm";
+  }
+  if (execPath.includes("yarn")) {
+    return "yarn";
+  }
+  if (execPath.includes("npm")) {
+    return "npm";
+  }
+  const userAgent = (process.env.npm_config_user_agent ?? "").toLowerCase();
+  if (userAgent.startsWith("pnpm/")) {
+    return "pnpm";
+  }
+  if (userAgent.startsWith("yarn/")) {
+    return "yarn";
+  }
+  return "npm";
+}
+
+function runPackageScript(scriptName) {
+  const [command, args] = resolvePackageManagerRunArgs(scriptName);
+  run(command, args);
 }
 
 function inGitRepo() {
@@ -175,12 +224,6 @@ async function main() {
     throw new Error(`Invalid version "${nextVersion}". Expected SemVer like 1.2.3`);
   }
 
-  if (nextVersion === currentVersions.packageJson) {
-    throw new Error(
-      `Version is already ${nextVersion}. Use a new version before creating a release tag.`,
-    );
-  }
-
   const tag = `v${nextVersion}`;
   ensureTagDoesNotExist(tag);
 
@@ -189,24 +232,32 @@ async function main() {
   }
 
   const result = setProjectVersion(nextVersion);
-  console.log(`Updated version to ${nextVersion}`);
-  for (const item of result.changed) {
-    console.log(`  ${item.file}: ${item.from} -> ${item.to}`);
+  const anyVersionFileChanged = result.changed.some((item) => item.from !== item.to);
+
+  if (!anyVersionFileChanged) {
+    console.log(`Version already ${nextVersion}, no version files changed. Tagging current commit.`);
+  } else {
+    console.log(`Updated version to ${nextVersion}`);
+    for (const item of result.changed) {
+      console.log(`  ${item.file}: ${item.from} -> ${item.to}`);
+    }
   }
 
   const shouldRunCheck =
     options.skipCheck === true
       ? false
       : options.skipCheck === null
-        ? await askYesNo("Run npm run check before release?", true)
+        ? await askYesNo(`Run ${getPackageManagerName()} run check before release?`, true)
         : true;
 
   if (shouldRunCheck) {
-    run("npm", ["run", "check"]);
+    runPackageScript("check");
   }
 
-  run("git", ["add", "package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"]);
-  run("git", ["commit", "-m", `release: ${tag}`]);
+  if (anyVersionFileChanged) {
+    run("git", ["add", "package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"]);
+    run("git", ["commit", "-m", `release: ${tag}`]);
+  }
   run("git", ["tag", tag]);
 
   const shouldPush =

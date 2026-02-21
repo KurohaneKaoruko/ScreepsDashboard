@@ -21,7 +21,7 @@ jobs:
       - name: Verify tag and project version match
         run: npm run version:verify-tag -- ${{ github.ref_name }}
 
-  publish-tauri:
+  publish-desktop:
     needs: verify-version
     permissions:
       contents: write
@@ -74,3 +74,128 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           releaseDraft: false
           args: ${{ matrix.args }}
+
+  publish-android:
+    needs: publish-desktop
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      NDK_VERSION: "26.3.11579264"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust Android targets
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;${NDK_VERSION}"
+          yes | sdkmanager --licenses
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Android APK
+        run: npm run package:target -- android-apk
+
+      - name: Build Android AAB
+        run: npm run package:target -- android-aab
+
+      - name: Upload Android artifacts to release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/android-apk/*.apk
+            dist/android-aab/*.aab
+
+  publish-ios:
+    needs: publish-desktop
+    runs-on: macos-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust iOS targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Initialize iOS project (best effort)
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [ ! -d "src-tauri/gen/apple" ]; then
+            npm run tauri -- ios init
+          fi
+
+      - name: Build iOS bundle (best effort)
+        continue-on-error: true
+        run: npm run package:target -- ios
+
+      - name: Prepare iOS artifacts
+        id: ios_assets
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ios-upload
+          shopt -s nullglob
+          for item in dist/ios/*; do
+            base="$(basename "$item")"
+            if [ -d "$item" ]; then
+              ditto -c -k --sequesterRsrc --keepParent "$item" "dist/ios-upload/${base}.zip"
+            else
+              cp "$item" "dist/ios-upload/${base}"
+            fi
+          done
+          if compgen -G "dist/ios-upload/*" > /dev/null; then
+            echo "has_assets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_assets=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload iOS artifacts to release
+        if: steps.ios_assets.outputs.has_assets == 'true'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/ios-upload/*

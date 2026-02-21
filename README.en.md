@@ -155,7 +155,7 @@ npm run version
 npm run release
 ```
 
-The `v*` tag push triggers `.github/workflows/release.yml`, which builds installers on Windows/macOS/Linux and uploads them to the GitHub Release automatically.
+The `v*` tag push triggers `.github/workflows/release.yml`, which builds desktop installers on Windows/macOS/Linux, Android APK/AAB, and an iOS bundle (best effort), then uploads artifacts to GitHub Release automatically.
 
 ## License
 

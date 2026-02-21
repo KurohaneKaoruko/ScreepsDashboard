@@ -155,7 +155,7 @@ npm run version
 npm run release
 ```
 
-推送 `v*` tag 后会触发 `.github/workflows/release.yml`，自动构建并上传安装包到 GitHub Release。
+推送 `v*` tag 后会触发 `.github/workflows/release.yml`，自动构建 Windows/macOS/Linux 桌面安装包、Android APK/AAB，并尝试构建 iOS 包（best effort），然后上传到 GitHub Release。
 
 ## License
 
