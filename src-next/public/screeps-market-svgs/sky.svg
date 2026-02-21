@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1921.32 1080.3">
+    <defs>
+        <style>
+            .cls-2{fill:url(#gradient_19);}
+            .cls-3{fill:url(#gradient_19-2);}
+            .cls-4{fill:url(#gradient_19-3);}
+            .cls-5{fill:url(#gradient_19-4);}
+            .cls-6{fill:url(#gradient_19-5);}
+
+            .cls-2,.cls-3,.cls-4,.cls-5,.cls-6{opacity:0.1;}
+        </style>
+
+        <linearGradient id="gradient_19" x1="1121.1" x2="1121.1" y2="74.6" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#b291e2" stop-opacity="0.86">
+            </stop>
+            <stop offset="1" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="gradient_19-2" x1="1084.75" x2="1084.75" y2="102.66" xlink:href="#gradient_19"/>
+        <linearGradient id="gradient_19-3" x1="1356.53" x2="1356.53" y2="121.36" xlink:href="#gradient_19"/>
+        <linearGradient id="gradient_19-4" x1="1306.77" x2="1306.77" y2="121.36" xlink:href="#gradient_19"/>
+        <linearGradient id="gradient_19-5" x1="1458.23" x2="1458.23" y2="121.36" xlink:href="#gradient_19"/>
+    </defs>
+    <!--  *** Sky ***  -->
+    <polygon class="cls-2" points="1289.69 74.6 892.5 74.6 952.5 0 1349.69 0 1289.69 74.6"/>
+    <polygon class="cls-3" points="1153.35 102.66 936.15 102.66 1016.15 0 1233.35 0 1153.35 102.66"/>
+    <polygon class="cls-4" points="1420.13 121.36 1202.94 121.36 1292.94 0 1510.13 0 1420.13 121.36"/>
+    <polygon class="cls-5" points="1370.37 121.36 1153.18 121.36 1243.18 0 1460.37 0 1370.37 121.36"/>
+    <polygon class="cls-6" points="1533.65 121.36 1316.45 121.36 1406.45 0 1600 0 1600 31.94 1533.65 121.36"/>
+
+</svg>

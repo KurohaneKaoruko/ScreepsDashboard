@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52"><defs><style>
+.cls-1{fill:none;}.cls-2{fill:#fbe679;}.cls-3{opacity:0.4;}
+.bg:nth-child(2n){
+	transform-origin: 55% 50%;
+	/*animation: bg 13s linear 0s infinite;*/
+}
+@keyframes bg{
+	100%{
+		transform: rotate(360deg)
+	}
+}
+.bg:nth-child(2n+1){
+	transform-origin: 55% 50%;
+	/*animation: bg1 18s ease 0s infinite;*/
+}
+@keyframes bg1{
+	100%{
+		transform: rotate(-360deg)
+	}
+}	
+</style>
+<filter id="shadow-normal" x="0%" y="0%" width="100%" height="100%">
+  <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="rgba(251, 230, 121, 0.72)" flood-opacity="1" />
+</filter>
+</defs><title>energy</title><g style="filter: url(#shadow-normal);"><rect class="cls-1" width="52" height="52"/><circle class="cls-2" cx="26" cy="26" r="19"/><g class="cls-3"><path class="cls-2 bg" d="M47.57,12.55c.05-.39,1-.76,1-.76s.3,1.18,0,1.36S47.53,12.86,47.57,12.55Z"/><path class="cls-2 bg" d="M27.85,5.27c.39,0,.76,1,.76,1s-1.18.31-1.36,0S27.54,5.23,27.85,5.27Z"/><path class="cls-2 bg" d="M4.6,38.12c.16-.25,1.1.12,1.1.12s-.36.57-.65.59S4.47,38.33,4.6,38.12Z"/><path class="cls-2 bg" d="M9,38.53c.16-.25,1.1.12,1.1.12s-.36.57-.65.59S8.85,38.73,9,38.53Z"/><path class="cls-2 bg" d="M5.16,25.64c.16-.25,1.1.12,1.1.12s-.36.57-.65.59S5,25.84,5.16,25.64Z"/><path class="cls-2 bg" d="M47,28.45c.09-.61,2.18-.71,2.18-.71s-.2,1.39-.71,1.67S46.95,28.94,47,28.45Z"/><path class="cls-2 bg" d="M20.84,46.69c.24-.57,2.29-.13,2.29-.13S22.59,47.85,22,48,20.64,47.14,20.84,46.69Z"/><path class="cls-2 bg" d="M47.07,18c-.6.34-1.66-1.29-1.66-1.29s.89-.92,1.5-.66C47.36,16.27,47.55,17.75,47.07,18Z"/></g></g></svg>

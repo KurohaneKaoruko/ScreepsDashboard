@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52"><defs><style>.cls-1{fill:none;}.cls-2{opacity:0.4;}.cls-3{fill:#ec3a3c;}
+.bg:nth-child(2n){
+	transform-origin: 55% 50%;
+	/*animation: bg 30s linear 0s infinite;*/
+}
+@keyframes bg{
+	100%{
+		transform: rotate(360deg)
+	}
+}
+.bg:nth-child(2n+1){
+	transform-origin: 55% 50%;
+	/*animation: bg1 30s ease 0s infinite;*/
+}
+@keyframes bg1{
+	100%{
+		transform: rotate(-360deg)
+	}
+}
+</style>
+<filter id="shadow-normal" x="0%" y="0%" width="100%" height="100%">
+  <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="rgba(236, 58, 60, 0.72)" flood-opacity="1" />
+</filter>
+</defs><title>power</title><g style="filter: url(#shadow-normal);"><rect class="cls-1" width="52" height="52"/><g class="cls-2"><path class="cls-3 bg" d="M39.07,47.14c.34.2.33,1.17.33,1.17s-1.2-.18-1.24-.55S38.8,47,39.07,47.14Z"/><path class="cls-3 bg" d="M37.3,43.9c-.2.34-1.17.33-1.17.33s.17-1.2.54-1.25S37.46,43.63,37.3,43.9Z"/><path class="cls-3 bg" d="M46.61,17.6c.29.06.28,1.07.28,1.07s-.66-.13-.79-.39S46.37,17.55,46.61,17.6Z"/><path class="cls-3 bg" d="M6.19,10.72c.29.06.28,1.07.28,1.07s-.66-.13-.79-.39S6,10.68,6.19,10.72Z"/><path class="cls-3 bg" d="M16.8,2.48c.29.06.28,1.07.28,1.07s-.66-.13-.79-.39S16.56,2.43,16.8,2.48Z"/><path class="cls-3 bg" d="M21.07,46c.53.32-.19,2.29-.19,2.29S19.67,47.56,19.6,47,20.64,45.74,21.07,46Z"/><path class="cls-3 bg" d="M3.65,20.41c.62,0,1,2.09,1,2.09s-1.4,0-1.74-.52S3.15,20.4,3.65,20.41Z"/><path class="cls-3 bg" d="M28,47.78c-.09-.68,1.84-1,1.84-1s.5,1.18,0,1.64S28.05,48.33,28,47.78Z"/></g><circle class="cls-3" cx="26" cy="26" r="19"/></g></svg>

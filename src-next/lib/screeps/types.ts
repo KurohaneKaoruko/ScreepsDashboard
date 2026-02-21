@@ -279,6 +279,41 @@ export interface PublicSnapshot {
   map?: PublicMapSummary;
 }
 
+export type MarketOrderType = "buy" | "sell";
+
+export interface MarketOrderSummary {
+  id: string;
+  resourceType: string;
+  type: MarketOrderType;
+  price: number;
+  amount: number;
+  remainingAmount: number;
+  totalAmount?: number;
+  roomName?: string;
+  shard?: string;
+}
+
+export interface MarketResourceOrders {
+  resourceType: string;
+  buyOrders: MarketOrderSummary[];
+  sellOrders: MarketOrderSummary[];
+}
+
+export interface MarketSnapshot {
+  fetchedAt: string;
+  credits?: number;
+  rooms: RoomSummary[];
+  ordersByResource: MarketResourceOrders[];
+}
+
+export interface MarketResourceSnapshot {
+  fetchedAt: string;
+  resourceType: string;
+  credits?: number;
+  rooms: RoomSummary[];
+  resourceOrders: MarketResourceOrders;
+}
+
 export type RankingMode = "global" | "season";
 
 export interface RankingEntry {

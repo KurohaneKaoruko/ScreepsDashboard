@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 200">
+<defs>
+    <style>
+        .cls-1{fill:url(#gradient_53);}
+        .cls-17,.cls-2,.cls-23,.cls-24,.cls-3,.cls-4,.cls-5,.cls-6{opacity:0.1;}
+        .cls-2{fill:url(#gradient_19);}
+        .cls-3{fill:url(#gradient_19-2);}
+        .cls-4{fill:url(#gradient_19-3);}
+        .cls-5{fill:url(#gradient_19-4);}
+        .cls-6{fill:url(#gradient_19-5);}
+        .cls-10,.cls-13,.cls-18,.cls-24,.cls-25,.cls-26,.cls-30,.cls-31,.cls-32,.cls-33,.cls-35,.cls-7{fill:none;}
+        .cls-26,.cls-31,.cls-32,.cls-33,.cls-35,.cls-7{stroke:#8f9fc4;}
+        .cls-10,.cls-26,.cls-31,.cls-32,.cls-35,.cls-7{stroke-linecap:round;stroke-linejoin:round;}
+        .cls-11,.cls-15,.cls-7{opacity:0.4;}
+        .cls-11,.cls-12,.cls-14,.cls-16,.cls-17,.cls-19,.cls-20,.cls-8,.cls-9{fill:#909fc4;}
+        .cls-10,.cls-13,.cls-20,.cls-21,.cls-8,.cls-9{opacity:0.3;}
+        .cls-9{font-size:6px;}
+        .cls-19,.cls-20,.cls-9{font-family:MyriadPro-Regular, Myriad Pro;}
+        .cls-10,.cls-13,.cls-18,.cls-24,.cls-25,.cls-30{stroke:#909fc4;}
+        .cls-12,.cls-18,.cls-22,.cls-31,.cls-34{opacity:0.2;}
+        .cls-13,.cls-18,.cls-24,.cls-25,.cls-30,.cls-33{stroke-miterlimit:10;}
+        .cls-14,.cls-19{opacity:0.15;}
+        .cls-19,.cls-20{font-size:5.35px;}
+        .cls-25{opacity:0.06;}
+        .cls-27{fill:#2c467e;}
+        .cls-28{fill:#141414;}
+        .cls-29,.cls-34{fill:#8f9fc4;}
+        .cls-32{opacity:0.64;}
+        .cls-35{stroke-width:0.75px;}
+        .cls-36{fill:#1a1c22;}
+    </style>
+</defs>
+<title>main-illustration</title>
+    <g id='code-1'>
+        <line class="cls-31" x1="342.69" y1="85.91" x2="328.31" y2="85.91"/>
+        <line class="cls-32" x1="328.31" y1="80.3" x2="360.26" y2="80.3"/>
+        <line class="cls-31" x1="346.86" y1="85.91" x2="371.1" y2="85.91"/>
+        <line class="cls-31" x1="375.85" y1="85.91" x2="380.1" y2="85.91"/>
+        <line class="cls-31" x1="328.31" y1="95.96" x2="352.56" y2="95.96"/>
+        <line class="cls-31" x1="357.3" y1="95.96" x2="361.55" y2="95.96"/>
+        <line class="cls-31" x1="365.4" y1="95.96" x2="377.4" y2="95.96"/>
+        <line class="cls-31" x1="328.31" y1="99.54" x2="332.56" y2="99.54"/>
+        <line class="cls-31" x1="336.41" y1="99.54" x2="348.41" y2="99.54"/>
+        <line class="cls-31" x1="370.4" y1="90.67" x2="353.16" y2="90.67"/>
+        <line class="cls-31" x1="348.41" y1="90.67" x2="344.17" y2="90.67"/>
+        <line class="cls-31" x1="340.31" y1="90.67" x2="328.31" y2="90.67"/>
+    </g>
+
+</svg>

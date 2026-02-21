@@ -2054,7 +2054,7 @@ async function mapWithConcurrency<T, R>(
 
 export async function fetchDashboardRoomObjects(
   session: ScreepsSession,
-  rooms: RoomSummary[]
+  rooms: readonly RoomSummary[]
 ): Promise<Record<string, RoomObjectSummary[]>> {
   if (!rooms.length) {
     return {};

@@ -1,0 +1,80 @@
+<svg fill="none" height="60" viewBox="0 0 60 60" width="60" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#inventory-resouce-keys-clip)">
+<g filter="url(#inventory-resouce-keys-filter)">
+<path d="M40.9928 29.981L45.659 36.9804V22.9817L40.9928 29.981Z" fill="#CCBC30" opacity="0.3">
+</path>
+<path d="M30.7271 11.783L45.659 22.7182L41.926 28.1148L30.7271 11.783Z" fill="#CCBC30" opacity="0.6">
+</path>
+<path d="M30.7271 48.1794L45.659 37.2442L41.926 31.8476L30.7271 48.1794Z" fill="#CCBC30" opacity="0.6">
+</path>
+<path d="M20.4594 29.981L15.7931 36.9804V22.9817L20.4594 29.981Z" fill="#CCBC30" opacity="0.3">
+</path>
+<path d="M30.7251 11.783L15.7932 22.7182L19.5262 28.1148L30.7251 11.783Z" fill="#CCBC30" opacity="0.6">
+</path>
+<path d="M30.7251 48.1794L15.7932 37.2442L19.5262 31.8476L30.7251 48.1794Z" fill="#CCBC30" opacity="0.6">
+</path>
+<path d="M30.7249 16.4501L28.8584 20.1831H32.5914L30.7249 16.4501Z" fill="#CCBC30" opacity="0.2">
+</path>
+<path clip-rule="evenodd" d="M30.727 11.783L20.4613 29.5146L40.9927 29.5146L30.727 11.783ZM32.6115 25.0635L35.3932 29.5142H26.0608L30.727 22.0483L31.8938 23.9152H35.3932L33.3948 26.3134L32.6115 25.0635ZM26.0593 23.9171L29.558 23.9171L28.0548 26.3118L26.0593 23.9171ZM30.727 16.4493L28.8605 20.1823H32.5935L30.727 16.4493Z" fill="#CCBC30" fill-rule="evenodd">
+</path>
+<path d="M35.3932 23.9152L31.8919 23.9152L33.3947 26.3134L35.3932 23.9152Z" fill="#CCBC30" opacity="0.5">
+</path>
+<path d="M29.558 23.9171L26.0593 23.9171L28.0548 26.3118L29.558 23.9171Z" fill="#CCBC30" opacity="0.5">
+</path>
+<path clip-rule="evenodd" d="M30.727 48.1982L20.4613 30.4665L40.9927 30.4665L30.727 48.1982ZM29.558 36.064L26.0593 36.064L28.0548 33.6693L29.558 36.064ZM31.8938 36.0659H35.3932L33.3948 33.6677L32.6115 34.9176L35.3932 30.4669H26.0608L30.727 37.9329L31.8938 36.0659ZM30.727 43.5318L28.8605 39.7988H32.5935L30.727 43.5318Z" fill="#CCBC30" fill-rule="evenodd">
+</path>
+<path d="M30.727 43.5332L28.8605 39.8003H32.5935L30.727 43.5332Z" fill="#CCBC30" opacity="0.2">
+</path>
+<path d="M35.3917 36.0647L31.8904 36.0647L33.3933 33.6666L35.3917 36.0647Z" fill="#CCBC30" opacity="0.5">
+</path>
+<path d="M29.558 36.064L26.0593 36.064L28.0548 33.6693L29.558 36.064Z" fill="#CCBC30" opacity="0.5">
+</path>
+<path clip-rule="evenodd" d="M27.9305 29.9811L30.727 34.6418L33.5234 29.9811H33.5267L33.5251 29.9784L33.5267 29.9756H33.5234L30.727 25.3149L27.9305 29.9756H27.9272L27.9289 29.9784L27.9272 29.9811H27.9305Z" fill="#CCBC30" fill-rule="evenodd">
+</path>
+<g class="inventory-resouce-keys-dust">
+<path d="M20.2543 10.7627L16.513 13.0627L19.8495 15.1357L20.2543 10.7627Z" fill="#CCBC30" opacity="0.4">
+</path>
+<path d="M45.2432 44.336L42.2928 43.2903L42.6364 46.0689L45.2432 44.336Z" fill="#CCBC30" opacity="0.4">
+</path>
+<path d="M20.0501 44.5556L16.9629 40.7135L15.1241 44.7201L20.0501 44.5556Z" fill="#CCBC30" opacity="0.2">
+</path>
+<path d="M23.9073 52.2111L22.9174 50.9792L22.3278 52.2639L23.9073 52.2111Z" fill="#CCBC30" opacity="0.4">
+</path>
+<path d="M51.9047 26.0802L50.9148 24.8483L50.3252 26.133L51.9047 26.0802Z" fill="#CCBC30" opacity="0.8">
+</path>
+<path d="M13.9127 27.7559L12.3262 25.7815L11.3813 27.8405L13.9127 27.7559Z" fill="#CCBC30" opacity="0.8">
+</path>
+<path d="M9.47264 41.1887L8.34089 39.7802L7.66679 41.249L9.47264 41.1887Z" fill="#CCBC30" opacity="0.4">
+</path>
+<path d="M54.2927 41.4789L52.1699 38.837L50.9055 41.592L54.2927 41.4789Z" fill="#CCBC30" opacity="0.4">
+</path>
+<path d="M26.0074 6.00213L25.6887 7.484L27.0017 7.14621L26.0074 6.00213Z" fill="#CCBC30" opacity="0.8">
+</path>
+<path d="M41.7676 11.205L38.1022 13.8234L41.6631 15.7084L41.7676 11.205Z" fill="#CCBC30" opacity="0.4">
+</path>
+</g>
+</g>
+</g>
+<defs>
+<filter color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" height="106.262" id="inventory-resouce-keys-filter" width="106.626" x="-22.3333" y="-23.9979">
+<feFlood flood-opacity="0" result="BackgroundImageFix">
+</feFlood>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0">
+</feColorMatrix>
+<feOffset>
+</feOffset>
+<feGaussianBlur stdDeviation="5">
+</feGaussianBlur>
+<feColorMatrix type="matrix" values="0 0 0 0 0.815686 0 0 0 0 0.796078 0 0 0 0 0.262745 0 0 0 0.2 0">
+</feColorMatrix>
+<feBlend in2="BackgroundImageFix" mode="normal" result="effect1_dropShadow">
+</feBlend>
+<feBlend in="SourceGraphic" in2="effect1_dropShadow" mode="normal" result="shape">
+</feBlend>
+</filter>
+<clipPath id="inventory-resouce-keys-clip">
+<rect fill="white" height="60" width="60">
+</rect>
+</clipPath>
+</defs>
+</svg>

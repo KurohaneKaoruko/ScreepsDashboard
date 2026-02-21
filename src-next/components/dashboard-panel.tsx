@@ -25,14 +25,14 @@ import {
   toRoomMapOverlayKey,
   type RoomMapOverlay,
 } from "../lib/screeps/room-map-realtime";
-import type { RoomObjectSummary } from "../lib/screeps/types";
+import type { RoomObjectSummary, RoomThumbnail } from "../lib/screeps/types";
 import { useAuthStore } from "../stores/auth-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { MetricCell } from "./metric-cell";
 import { CircularProgress } from "./circular-progress";
 import { TerrainThumbnail } from "./terrain-thumbnail";
 
-const EMPTY_ROOM_THUMBNAILS: ReadonlyArray<{ name: string; shard?: string }> = [];
+const EMPTY_ROOM_THUMBNAILS: ReadonlyArray<RoomThumbnail> = [];
 
 function formatNumber(
   value: number | undefined,
@@ -610,16 +610,31 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
                   <MetricCell
                     label={t("dashboard.credits")}
                     value={formatNumber(profile?.resources.credits, 3, { fixed: true })}
+                    iconSrc="/screeps-market-svgs/resource-credits.svg"
+                    className="profile-resource-item profile-resource-item-credits"
+                    iconClassName="resource-credits"
                   />
                   <MetricCell
                     label={t("dashboard.cpuUnlock")}
                     value={formatNumber(profile?.resources.cpuUnlock)}
+                    iconSrc="/screeps-market-svgs/resource-cpu-unlock.svg"
+                    className="profile-resource-item profile-resource-item-cpuunlock"
+                    iconClassName="resource-cpu-unlock"
                   />
                   <MetricCell
                     label={t("dashboard.pixels")}
                     value={formatNumber(profile?.resources.pixels)}
+                    iconSrc="/screeps-market-svgs/resource-pixel.svg"
+                    className="profile-resource-item profile-resource-item-pixels"
+                    iconClassName="resource-pixel"
                   />
-                  <MetricCell label={t("dashboard.accessKey")} value={accessKeyValue ?? "N/A"} />
+                  <MetricCell
+                    label={t("dashboard.accessKey")}
+                    value={accessKeyValue ?? "N/A"}
+                    iconSrc="/screeps-market-svgs/resource-access-key.svg"
+                    className="profile-resource-item profile-resource-item-access-key"
+                    iconClassName="resource-access-key"
+                  />
                 </div>
 
                 <div className="profile-growth-grid">
