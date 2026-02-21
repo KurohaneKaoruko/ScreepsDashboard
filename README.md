@@ -141,6 +141,22 @@ CI 位于 `.github/workflows/ci.yml`，主要执行：
 - `npm run rust:clippy`
 - `npm run build`
 
+## Release
+
+1. 交互式修改版本号：
+
+```bash
+npm run version
+```
+
+2. 交互式发版（运行后按提示输入版本号）：
+
+```bash
+npm run release
+```
+
+推送 `v*` tag 后会触发 `.github/workflows/release.yml`，自动构建并上传安装包到 GitHub Release。
+
 ## License
 
 MIT

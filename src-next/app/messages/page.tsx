@@ -1,12 +1,12 @@
 import { AppShell } from "../../components/app-shell";
 import { AuthGuard } from "../../components/auth-guard";
-import { ConsolePanel } from "../../components/console-panel";
+import { MessagesPanel } from "../../components/messages-panel";
 
-export default function ConsolePage() {
+export default function MessagesPage() {
   return (
     <AuthGuard>
       <AppShell>
-        <ConsolePanel />
+        <MessagesPanel />
       </AppShell>
     </AuthGuard>
   );

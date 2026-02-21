@@ -333,3 +333,46 @@ export interface RankingSnapshot {
   page: number;
   pageSize: number;
 }
+
+export type MessageFolder = "inbox" | "sent";
+
+export interface MessageSummary {
+  id: string;
+  folder: MessageFolder;
+  from?: string;
+  to?: string;
+  subject?: string;
+  text?: string;
+  unread?: boolean;
+  createdAt?: string;
+}
+
+export interface MessagesPage {
+  fetchedAt: string;
+  folder: MessageFolder;
+  items: MessageSummary[];
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export interface SendMessageInput {
+  to: string;
+  subject?: string;
+  text: string;
+}
+
+export interface ConsoleExecutionResult {
+  feedback?: string;
+  raw?: string;
+  executedAt: string;
+}
+
+export type ConsoleStreamKind = "stdout" | "error" | "system";
+
+export interface ConsoleStreamRecord {
+  id: string;
+  channel: string;
+  text: string;
+  receivedAt: string;
+  kind: ConsoleStreamKind;
+}

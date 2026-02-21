@@ -116,7 +116,7 @@ export function AppNav({ onNavigate }: AppNavProps) {
   const { t, locale } = useI18n();
   const mapLabel = locale === "zh-CN" ? "\u5730\u56fe" : "Map";
   const marketLabel = locale === "zh-CN" ? "\u5546\u5e97" : "Market";
-  const mailLabel = locale === "zh-CN" ? "\u90ae\u4ef6" : "Mail";
+  const mailLabel = locale === "zh-CN" ? "\u6d88\u606f" : "Messages";
 
   const navItems: NavItem[] = session
     ? [
@@ -145,9 +145,9 @@ export function AppNav({ onNavigate }: AppNavProps) {
           icon: "market",
         },
         {
-          href: "/mail",
+          href: "/messages",
           label: mailLabel,
-          meta: "/mail",
+          meta: "/messages",
           icon: "mail",
         },
         {

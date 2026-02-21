@@ -1,15 +1,28 @@
 {
   "name": "screeps-dashboard",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "cd src-next && next dev",
     "build": "cd src-next && next build",
     "start": "cd src-next && next start",
     "lint": "cd src-next && next lint",
+    "typecheck:web": "tsc --noEmit --incremental false -p src-next/tsconfig.json",
+    "rust:fmt:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check",
+    "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "check": "npm run lint && npm run typecheck:web && npm run rust:fmt:check && npm run rust:clippy && npm run build",
     "tauri": "tauri",
-    "package:target": "node scripts/build/package.mjs"
+    "tauri:desktop:dev": "tauri dev",
+    "tauri:desktop:build": "tauri build",
+    "tauri:android:init": "tauri android init",
+    "tauri:android:dev": "tauri android dev",
+    "tauri:android:build:apk": "npm run package:target -- android-apk --ci",
+    "tauri:android:build:aab": "npm run package:target -- android-aab --ci",
+    "package:target": "node scripts/build/package.mjs",
+    "version": "node scripts/release/version.mjs",
+    "version:verify-tag": "node scripts/release/verify-tag-version.mjs",
+    "release": "node scripts/release/release.mjs"
   },
   "dependencies": {
     "@screeps/renderer": "^1.6.8-arena",

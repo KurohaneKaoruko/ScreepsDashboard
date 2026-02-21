@@ -141,6 +141,22 @@ CI is defined in `.github/workflows/ci.yml` and runs:
 - `npm run rust:clippy`
 - `npm run build`
 
+## Release
+
+1. Sync version interactively:
+
+```bash
+npm run version
+```
+
+2. Interactive release (prompts for version, then commit/tag/push):
+
+```bash
+npm run release
+```
+
+The `v*` tag push triggers `.github/workflows/release.yml`, which builds installers on Windows/macOS/Linux and uploads them to the GitHub Release automatically.
+
 ## License
 
 MIT
