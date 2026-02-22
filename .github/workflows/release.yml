@@ -44,10 +44,10 @@ jobs:
             args: "--target aarch64-unknown-linux-gnu"
             allow_failure: true
           - platform: windows-latest
-            args: "--target x86_64-pc-windows-msvc"
+            args: "--target x86_64-pc-windows-msvc --bundles nsis"
             allow_failure: false
           - platform: windows-latest
-            args: "--target aarch64-pc-windows-msvc"
+            args: "--target aarch64-pc-windows-msvc --bundles nsis"
             allow_failure: false
           - platform: macos-latest
             args: "--target universal-apple-darwin"
@@ -140,21 +140,7 @@ jobs:
             echo "prerelease=$IS_PRERELEASE"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and publish installers (Windows prerelease: NSIS only)
-        if: ${{ contains(github.ref_name, '-') && startsWith(matrix.platform, 'windows') }}
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: ${{ steps.release_meta.outputs.release_name }}
-          releaseBody: ${{ steps.release_meta.outputs.release_body }}
-          prerelease: ${{ steps.release_meta.outputs.prerelease }}
-          releaseDraft: false
-          args: ${{ format('{0} --bundles nsis', matrix.args) }}
-
       - name: Build and publish installers
-        if: ${{ !(contains(github.ref_name, '-') && startsWith(matrix.platform, 'windows')) }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
