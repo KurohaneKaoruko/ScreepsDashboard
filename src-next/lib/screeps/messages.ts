@@ -121,11 +121,11 @@ export async function sendMessage(
   session: ScreepsSession,
   input: SendMessageInput
 ): Promise<string | undefined> {
-  const to = input.to.trim();
+  const respondent = input.to.trim();
   const subject = (input.subject ?? "").trim();
   const text = input.text.trim();
 
-  if (!to) {
+  if (!respondent) {
     throw new Error("Message recipient is required.");
   }
   if (!text) {
@@ -136,7 +136,7 @@ export async function sendMessage(
     baseUrl: session.baseUrl,
     endpoint: "/api/user/messages/send",
     method: "POST",
-    body: { to, subject, text },
+    body: { respondent, subject, text },
     token: session.token,
     username: session.username,
   });

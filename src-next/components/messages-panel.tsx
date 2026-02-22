@@ -208,19 +208,19 @@ function buildMessageRenderKey(message: ProcessedConversationMessage, index: num
   return `${message.id}|${message.createdAt ?? "--"}|${index}`;
 }
 
-function toTargetUsername(conversation: ProcessedConversation | undefined): string {
+function toTargetRespondent(conversation: ProcessedConversation | undefined): string {
   if (!conversation) {
     return "";
   }
-  const username = conversation.peerUsername.trim();
-  if (username && username !== "--") {
-    return username.startsWith("name:") ? username.slice(5) : username;
-  }
-  const peerId = conversation.peerId.trim();
-  if (!peerId || peerId === "--") {
+  const rawPeerId = conversation.peerId.trim();
+  if (!rawPeerId || rawPeerId === "--") {
     return "";
   }
-  return peerId.startsWith("name:") ? peerId.slice(5) : peerId;
+  const normalizedPeerId = rawPeerId.startsWith("name:") ? rawPeerId.slice(5) : rawPeerId;
+  if (!/^[0-9a-f]{24}$/i.test(normalizedPeerId)) {
+    return "";
+  }
+  return normalizedPeerId;
 }
 
 export function MessagesPanel() {
@@ -383,6 +383,53 @@ export function MessagesPanel() {
     [labels.failedToLoad, labels.unknownError, session]
   );
 
+  const appendLocalOutboundMessage = useCallback(
+    (conversation: ProcessedConversation, text: string) => {
+      if (!session) {
+        return;
+      }
+      const createdAt = new Date().toISOString();
+      const id = `local:${conversation.peerId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const localMessage: ProcessedConversationMessage = {
+        id,
+        createdAt,
+        text,
+        sender: {
+          id: session.userId?.trim() || session.username,
+          username: session.username,
+          isSelf: true,
+        },
+        recipient: {
+          id: conversation.peerId,
+          username: conversation.peerUsername,
+          isSelf: false,
+        },
+        direction: "outbound",
+        unread: false,
+      };
+
+      setThreadMessagesByPeer((current) => {
+        const existing = current[conversation.peerId] ?? conversation.messages;
+        return {
+          ...current,
+          [conversation.peerId]: [...existing, localMessage],
+        };
+      });
+
+      setConversationsMap((current) => {
+        const existing = current[conversation.peerId] ?? conversation;
+        return {
+          ...current,
+          [conversation.peerId]: {
+            ...existing,
+            messages: [localMessage],
+          },
+        };
+      });
+    },
+    [session]
+  );
+
   const conversations = useMemo<ConversationView[]>(() => {
     return Object.entries(conversationsMap)
       .map(([key, conversation]) => {
@@ -483,7 +530,7 @@ export function MessagesPanel() {
     }
     setComposeError(null);
 
-    const to = toTargetUsername(selectedConversation);
+    const to = toTargetRespondent(selectedConversation);
     const text = composeText.trim();
     if (!to) {
       setComposeError(labels.noTargetToSend);
@@ -500,14 +547,14 @@ export function MessagesPanel() {
       setComposeText("");
       setToastMessage(feedback ?? labels.sendSuccess);
       if (selectedConversation) {
-        await loadConversationThread(
+        appendLocalOutboundMessage(selectedConversation, text);
+        void loadConversationThread(
           selectedConversation.peerId,
           selectedConversation.peerUsername,
           selectedConversation.peerAvatarUrl,
           selectedConversation.peerHasBadge
         );
       }
-      await loadMessages();
     } catch (error) {
       setComposeError(error instanceof Error ? error.message : labels.unknownError);
     } finally {
@@ -526,9 +573,6 @@ export function MessagesPanel() {
           <button className="secondary-button" onClick={() => void loadMessages()} type="button">
             {labels.refreshNow}
           </button>
-          <span className="entity-chip">
-            {labels.conversations}: {conversations.length}
-          </span>
         </div>
       </header>
 
