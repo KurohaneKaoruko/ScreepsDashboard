@@ -159,10 +159,16 @@ CI is defined in `.github/workflows/ci.yml` and runs:
 npm run version
 ```
 
-2. Interactive release (prompts for version, then commit/tag/push):
+2. Interactive release (prompts for version/title/body, then commit/tag/push):
 
 ```bash
 npm run release
+```
+
+3. Non-interactive release with prerelease version and custom release notes:
+
+```bash
+npm run release -- --version 1.2.3-alpha --title "Screeps Dashboard v1.2.3-alpha" --body-file docs/release-notes/v1.2.3-alpha.md --yes
 ```
 
 The `v*` tag push triggers `.github/workflows/release.yml`, which builds desktop installers for Windows (x64 + ARM64), Linux (x64 + ARM64, ARM64 best effort), macOS universal, Android APK/AAB (arm64/armv7/x86_64/x86), and an iOS bundle (best effort), then uploads artifacts to GitHub Release automatically.

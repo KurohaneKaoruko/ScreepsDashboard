@@ -17,7 +17,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -25,19 +31,19 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint frontend
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Typecheck frontend
-        run: npm run typecheck:web
+        run: pnpm run typecheck:web
 
       - name: Check Rust formatting
-        run: npm run rust:fmt:check
+        run: pnpm run rust:fmt:check
 
       - name: Run Rust clippy
-        run: npm run rust:clippy
+        run: pnpm run rust:clippy
 
       - name: Build frontend export
-        run: npm run build
+        run: pnpm run build

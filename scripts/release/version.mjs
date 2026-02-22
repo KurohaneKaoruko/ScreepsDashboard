@@ -51,7 +51,7 @@ async function main() {
   const nextVersion = versionArg ? normalizeVersion(versionArg) : await askVersion(current.packageJson);
 
   if (!validateVersion(nextVersion)) {
-    throw new Error(`Invalid version "${nextVersion}". Expected SemVer like 1.2.3`);
+    throw new Error(`Invalid version "${nextVersion}". Expected SemVer like 1.2.3 or 1.2.3-alpha`);
   }
 
   const result = setProjectVersion(nextVersion);

@@ -55,7 +55,7 @@ export function readProjectVersions() {
 export function setProjectVersion(rawVersion) {
   const version = normalizeVersion(rawVersion);
   if (!validateVersion(version)) {
-    throw new Error(`Invalid version "${rawVersion}". Use SemVer format like 1.2.3`);
+    throw new Error(`Invalid version "${rawVersion}". Use SemVer format like 1.2.3 or 1.2.3-alpha`);
   }
 
   const packageJson = readJson(versionFiles.packageJson);

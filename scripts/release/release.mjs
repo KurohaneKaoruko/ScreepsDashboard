@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { basename } from "node:path";
 import {
   normalizeVersion,
   projectRoot,
@@ -15,20 +15,28 @@ function printUsage() {
   console.log(`Usage:
   npm run release
   npm run release -- --version 1.2.3
+  npm run release -- --version 1.2.3-alpha --title "Screeps Dashboard v1.2.3-alpha"
+  npm run release -- --version 1.2.3 --body-file docs/release-notes/v1.2.3.md
   npm run release -- --version 1.2.3 --skip-check
   npm run release -- --version 1.2.3 --no-push
 
 Options:
-  --version, -v   Release version, e.g. 1.2.3 (or v1.2.3)
-  --skip-check    Skip "npm run check"
-  --no-push       Do not push commit/tag to remote
-  --yes, -y       Skip confirmation prompt
+  --version, -v     Release version, e.g. 1.2.3 or 1.2.3-alpha (or v1.2.3)
+  --title, -t       Release title used as tag subject / GitHub Release title
+  --body, -b        Release body content used in GitHub Release notes
+  --body-file       Read release body content from a UTF-8 text file
+  --skip-check      Skip "npm run check"
+  --no-push         Do not push commit/tag to remote
+  --yes, -y         Skip confirmation prompt
 `);
 }
 
 function parseArgs(argv) {
   const options = {
     version: "",
+    title: "",
+    body: null,
+    bodyFile: "",
     skipCheck: null,
     noPush: null,
     yes: false,
@@ -55,10 +63,37 @@ function parseArgs(argv) {
     }
     if (arg === "--version" || arg === "-v") {
       const value = argv[i + 1];
-      if (!value) {
+      if (value === undefined) {
         throw new Error(`${arg} requires a value`);
       }
       options.version = value;
+      i += 1;
+      continue;
+    }
+    if (arg === "--title" || arg === "-t") {
+      const value = argv[i + 1];
+      if (value === undefined) {
+        throw new Error(`${arg} requires a value`);
+      }
+      options.title = value;
+      i += 1;
+      continue;
+    }
+    if (arg === "--body" || arg === "-b") {
+      const value = argv[i + 1];
+      if (value === undefined) {
+        throw new Error(`${arg} requires a value`);
+      }
+      options.body = value;
+      i += 1;
+      continue;
+    }
+    if (arg === "--body-file") {
+      const value = argv[i + 1];
+      if (value === undefined) {
+        throw new Error(`${arg} requires a value`);
+      }
+      options.bodyFile = value;
       i += 1;
       continue;
     }
@@ -66,7 +101,23 @@ function parseArgs(argv) {
       options.version = arg.slice("--version=".length);
       continue;
     }
+    if (arg.startsWith("--title=")) {
+      options.title = arg.slice("--title=".length);
+      continue;
+    }
+    if (arg.startsWith("--body=")) {
+      options.body = arg.slice("--body=".length);
+      continue;
+    }
+    if (arg.startsWith("--body-file=")) {
+      options.bodyFile = arg.slice("--body-file=".length);
+      continue;
+    }
     throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  if (options.body != null && options.bodyFile) {
+    throw new Error("Use either --body or --body-file, not both.");
   }
 
   return options;
@@ -164,6 +215,19 @@ function ensureTagDoesNotExist(tag) {
   }
 }
 
+function createAnnotatedTag(tag, title, body) {
+  const args = ["tag", "-a", tag, "-m", title];
+  if (body.trim()) {
+    args.push("-m", body);
+  }
+  run("git", args);
+}
+
+function readBodyFromFile(filePath) {
+  const content = readFileSync(filePath, "utf8");
+  return content.replace(/\r\n/g, "\n").trimEnd();
+}
+
 async function askVersion(defaultVersion) {
   if (!stdin.isTTY) {
     throw new Error("No interactive terminal detected. Please pass --version.");
@@ -172,6 +236,38 @@ async function askVersion(defaultVersion) {
   const answer = await rl.question(`Release version (current: ${defaultVersion}): `);
   rl.close();
   return normalizeVersion(answer || defaultVersion);
+}
+
+async function askTitle(defaultTitle) {
+  if (!stdin.isTTY) {
+    return defaultTitle;
+  }
+  const rl = createInterface({ input: stdin, output: stdout });
+  const answer = await rl.question(`Release title (default: ${defaultTitle}): `);
+  rl.close();
+  return (answer || defaultTitle).trim();
+}
+
+async function askBody(defaultBody) {
+  if (!stdin.isTTY) {
+    return defaultBody;
+  }
+  const rl = createInterface({ input: stdin, output: stdout });
+  console.log('Release body: enter multiple lines, finish with a single "." on a new line.');
+  console.log("Press Enter then . to keep default body.");
+  const lines = [];
+  while (true) {
+    const line = await rl.question("> ");
+    if (line === ".") {
+      break;
+    }
+    lines.push(line);
+  }
+  rl.close();
+  if (lines.length === 0) {
+    return defaultBody;
+  }
+  return lines.join("\n").trimEnd();
 }
 
 async function askYesNo(question, defaultYes = true) {
@@ -221,10 +317,22 @@ async function main() {
     : await askVersion(currentVersions.packageJson);
 
   if (!validateVersion(nextVersion)) {
-    throw new Error(`Invalid version "${nextVersion}". Expected SemVer like 1.2.3`);
+    throw new Error(`Invalid version "${nextVersion}". Expected SemVer like 1.2.3 or 1.2.3-alpha`);
   }
 
   const tag = `v${nextVersion}`;
+  const defaultTitle = `Screeps Dashboard ${tag}`;
+  const defaultBody = `Automated release for ${tag}.`;
+  const releaseTitleInput = options.title || (await askTitle(defaultTitle));
+  const releaseTitle = releaseTitleInput.trim() || defaultTitle;
+  const releaseBodyRaw =
+    options.body != null
+      ? options.body
+      : options.bodyFile
+        ? readBodyFromFile(options.bodyFile)
+        : await askBody(defaultBody);
+  const releaseBody = String(releaseBodyRaw ?? "").replace(/\r\n/g, "\n").trimEnd();
+
   ensureTagDoesNotExist(tag);
 
   if (!options.yes) {
@@ -258,7 +366,7 @@ async function main() {
     run("git", ["add", "package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"]);
     run("git", ["commit", "-m", `release: ${tag}`]);
   }
-  run("git", ["tag", tag]);
+  createAnnotatedTag(tag, releaseTitle, releaseBody);
 
   const shouldPush =
     options.noPush === true
@@ -274,6 +382,7 @@ async function main() {
 
   console.log("");
   console.log(`Release ready: ${tag}`);
+  console.log(`Release title: ${releaseTitle}`);
   if (!shouldPush) {
     console.log(`Push manually when ready: git push && git push origin ${tag}`);
   } else {

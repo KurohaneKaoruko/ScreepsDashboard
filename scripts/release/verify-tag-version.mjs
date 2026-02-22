@@ -8,6 +8,7 @@ import {
 function printUsage() {
   console.log(`Usage:
   npm run version:verify-tag -- v1.2.3
+  npm run version:verify-tag -- v1.2.3-alpha
   node scripts/release/verify-tag-version.mjs v1.2.3`);
 }
 
@@ -19,7 +20,7 @@ if (!tag || tag === "--help" || tag === "-h") {
 
 const expectedVersion = normalizeVersion(tag);
 if (!validateVersion(expectedVersion)) {
-  console.error(`Invalid tag "${tag}". Expected format v1.2.3 or 1.2.3`);
+  console.error(`Invalid tag "${tag}". Expected format v1.2.3 / v1.2.3-alpha (or without v).`);
   process.exit(1);
 }
 

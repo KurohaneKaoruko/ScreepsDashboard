@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -49,6 +51,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Linux system dependencies
         if: startsWith(matrix.platform, 'ubuntu-')
@@ -81,15 +85,57 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve release metadata
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          DEFAULT_TITLE="Screeps Dashboard ${TAG}"
+          DEFAULT_BODY="Automated release for ${TAG}."
+          TAG_TYPE="$(git for-each-ref --format='%(objecttype)' "refs/tags/${TAG}" | head -n1)"
+
+          if [ "$TAG_TYPE" = "tag" ]; then
+            TAG_SUBJECT="$(git for-each-ref --format='%(contents:subject)' "refs/tags/${TAG}" | head -n1)"
+            TAG_BODY="$(git for-each-ref --format='%(contents:body)' "refs/tags/${TAG}")"
+          else
+            TAG_SUBJECT=""
+            TAG_BODY=""
+          fi
+
+          RELEASE_TITLE="${TAG_SUBJECT:-$DEFAULT_TITLE}"
+          if [ -n "${TAG_BODY//[[:space:]]/}" ]; then
+            RELEASE_BODY="$TAG_BODY"
+          else
+            RELEASE_BODY="$DEFAULT_BODY"
+          fi
+
+          if [[ "$VERSION" == *-* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+
+          {
+            echo "release_name<<EOF"
+            echo "$RELEASE_TITLE"
+            echo "EOF"
+            echo "release_body<<EOF"
+            echo "$RELEASE_BODY"
+            echo "EOF"
+            echo "prerelease=$IS_PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and publish installers
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: Screeps Dashboard ${{ github.ref_name }}
-          releaseBody: Automated release for ${{ github.ref_name }}.
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          releaseName: ${{ steps.release_meta.outputs.release_name }}
+          releaseBody: ${{ steps.release_meta.outputs.release_body }}
+          prerelease: ${{ steps.release_meta.outputs.prerelease }}
           releaseDraft: false
           args: ${{ matrix.args }}
 
