@@ -30,18 +30,28 @@ jobs:
       matrix:
         include:
           - platform: ubuntu-22.04
-            args: ""
+            args: "--target x86_64-unknown-linux-gnu"
+            allow_failure: false
+          - platform: ubuntu-24.04-arm
+            args: "--target aarch64-unknown-linux-gnu"
+            allow_failure: true
           - platform: windows-latest
-            args: ""
+            args: "--target x86_64-pc-windows-msvc"
+            allow_failure: false
+          - platform: windows-latest
+            args: "--target aarch64-pc-windows-msvc"
+            allow_failure: false
           - platform: macos-latest
-            args: ""
+            args: "--target universal-apple-darwin"
+            allow_failure: false
+    continue-on-error: ${{ matrix.allow_failure }}
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -59,6 +69,14 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust target for Windows ARM64
+        if: matrix.args == '--target aarch64-pc-windows-msvc'
+        run: rustup target add aarch64-pc-windows-msvc
+
+      - name: Add Rust targets for macOS universal
+        if: matrix.args == '--target universal-apple-darwin'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Install dependencies
         run: npm ci
@@ -96,7 +114,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Add Rust Android targets
-        run: rustup target add aarch64-linux-android armv7-linux-androideabi
+        run: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
 
       - name: Setup Java
         uses: actions/setup-java@v4
