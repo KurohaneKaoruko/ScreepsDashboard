@@ -216,6 +216,21 @@ function ensureTagDoesNotExist(tag) {
   }
 }
 
+function ensureRemoteTagDoesNotExist(tag) {
+  const result = spawnSync(
+    "git",
+    ["ls-remote", "--exit-code", "--tags", "origin", `refs/tags/${tag}`],
+    {
+      cwd: projectRoot,
+      stdio: "ignore",
+    },
+  );
+
+  if (result.status === 0) {
+    throw new Error(`Tag already exists on origin: ${tag}. Use a new version/tag.`);
+  }
+}
+
 function createAnnotatedTag(tag, title, body) {
   const args = ["tag", "-a", tag, "-m", title];
   if (body.trim()) {
@@ -348,6 +363,7 @@ async function main() {
   const releaseBody = String(releaseBodyRaw ?? "").replace(/\r\n/g, "\n").trimEnd();
 
   ensureTagDoesNotExist(tag);
+  ensureRemoteTagDoesNotExist(tag);
 
   if (!options.yes) {
     await askConfirmation(nextVersion, options.noPush);
