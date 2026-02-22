@@ -39,6 +39,41 @@ interface ScreepsMessagesSendInvokeResponse {
   feedback?: string;
 }
 
+function extractInvokeErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+    for (const key of ["message", "error", "cause", "details"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+    try {
+      const serialized = JSON.stringify(record);
+      if (serialized && serialized !== "{}") {
+        return serialized;
+      }
+    } catch {
+      // ignore serialization failure
+    }
+  }
+  return "Request failed";
+}
+
+async function tauriInvoke<T>(command: string, payload: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, payload);
+  } catch (error) {
+    throw new Error(extractInvokeErrorMessage(error));
+  }
+}
+
 export async function fetchProcessedMessages(
   session: ScreepsSession,
   options?: { maxConversations?: number }
@@ -54,7 +89,7 @@ export async function fetchProcessedMessages(
     maxConversations: options?.maxConversations,
   };
 
-  const result = await invoke<ProcessedConversationMap>("screeps_messages_fetch", { request });
+  const result = await tauriInvoke<ProcessedConversationMap>("screeps_messages_fetch", { request });
   return result ?? {};
 }
 
@@ -81,7 +116,7 @@ export async function fetchConversationThread(
     limit: input.limit,
   };
 
-  return invoke<ProcessedConversation>("screeps_messages_fetch_thread", { request });
+  return tauriInvoke<ProcessedConversation>("screeps_messages_fetch_thread", { request });
 }
 
 export async function sendMessage(
@@ -110,7 +145,7 @@ export async function sendMessage(
     subject,
     text,
   };
-  const response = await invoke<ScreepsMessagesSendInvokeResponse>("screeps_messages_send", {
+  const response = await tauriInvoke<ScreepsMessagesSendInvokeResponse>("screeps_messages_send", {
     request,
   });
   return response.feedback;

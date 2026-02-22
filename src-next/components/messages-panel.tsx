@@ -15,6 +15,33 @@ const TOAST_DURATION_MS = 2200;
 const PER_CONVERSATION_LIMIT = 200;
 const MAX_CONVERSATIONS = 200;
 
+function toErrorDetail(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+    for (const key of ["message", "error", "cause", "details"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+    try {
+      const serialized = JSON.stringify(record);
+      if (serialized && serialized !== "{}") {
+        return serialized;
+      }
+    } catch {
+      // ignore serialization failure
+    }
+  }
+  return fallback;
+}
+
 interface ConversationView {
   key: string;
   conversation: ProcessedConversation;
@@ -22,7 +49,6 @@ interface ConversationView {
   lastAtSort: number;
   lastText: string;
   unreadCount: number;
-  messageCount: number;
 }
 
 function formatDateTime(value: string | undefined): string {
@@ -240,6 +266,7 @@ export function MessagesPanel() {
   const [composeError, setComposeError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [mobilePane, setMobilePane] = useState<"list" | "thread">("list");
 
   const streamRef = useRef<HTMLDivElement | null>(null);
   const sessionKey = session
@@ -273,6 +300,7 @@ export function MessagesPanel() {
             bodyRequired: "请输入消息内容。",
             failedToLoad: "加载消息失败",
             unknownError: "未知错误",
+            backToConversations: "返回",
           }
         : {
             title: "Messages",
@@ -298,6 +326,7 @@ export function MessagesPanel() {
             bodyRequired: "Message body is required.",
             failedToLoad: "Failed to load messages",
             unknownError: "Unknown error",
+            backToConversations: "Back",
           },
     [isZh]
   );
@@ -326,7 +355,7 @@ export function MessagesPanel() {
         return next;
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : labels.unknownError;
+      const detail = toErrorDetail(error, labels.unknownError);
       setErrorMessage(`${labels.failedToLoad}: ${detail}`);
       setConversationsMap({});
     } finally {
@@ -374,7 +403,7 @@ export function MessagesPanel() {
           };
         });
       } catch (error) {
-        const detail = error instanceof Error ? error.message : labels.unknownError;
+        const detail = toErrorDetail(error, labels.unknownError);
         setErrorMessage(`${labels.failedToLoad}: ${detail}`);
       } finally {
         setThreadLoadingPeer((current) => (current === peerId ? null : current));
@@ -443,7 +472,6 @@ export function MessagesPanel() {
           lastAtSort: toSortTime(lastAt),
           lastText: toPreviewText(lastMessage?.text),
           unreadCount: messages.filter((item) => !item.sender.isSelf && item.unread).length,
-          messageCount: messages.length,
         };
       })
       .sort((left, right) => {
@@ -478,6 +506,12 @@ export function MessagesPanel() {
       return conversations[0].key;
     });
   }, [conversations]);
+
+  useEffect(() => {
+    if (!selectedConversationKey) {
+      setMobilePane("list");
+    }
+  }, [selectedConversationKey]);
 
   const selectedConversation = useMemo(
     () => conversationsMap[selectedConversationKey],
@@ -556,10 +590,19 @@ export function MessagesPanel() {
         );
       }
     } catch (error) {
-      setComposeError(error instanceof Error ? error.message : labels.unknownError);
+      setComposeError(toErrorDetail(error, labels.unknownError));
     } finally {
       setIsSending(false);
     }
+  }
+
+  function handleOpenConversation(conversationKey: string) {
+    setSelectedConversationKey(conversationKey);
+    setMobilePane("thread");
+  }
+
+  function handleBackToConversations() {
+    setMobilePane("list");
   }
 
   return (
@@ -578,7 +621,7 @@ export function MessagesPanel() {
 
       {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
 
-      <div className="chat-conversation-layout">
+      <div className={`chat-conversation-layout mobile-${mobilePane}`}>
         <aside className="card chat-conversation-card">
           <div className="chat-sidebar-top">
             <h2 className="chat-conversation-title">{labels.conversations}</h2>
@@ -586,15 +629,13 @@ export function MessagesPanel() {
               {filteredConversations.length}/{conversations.length}
             </span>
           </div>
-          <label className="chat-search-box">
-            <input
-              className="chat-search-input"
-              value={conversationQuery}
-              onChange={(event) => setConversationQuery(event.currentTarget.value)}
-              placeholder={labels.searchConversations}
-              type="search"
-            />
-          </label>
+          <input
+            className="chat-search-input"
+            value={conversationQuery}
+            onChange={(event) => setConversationQuery(event.currentTarget.value)}
+            placeholder={labels.searchConversations}
+            type="search"
+          />
           {isLoading ? (
             <p className="messages-loading">{labels.loading}</p>
           ) : conversations.length === 0 ? (
@@ -602,52 +643,49 @@ export function MessagesPanel() {
           ) : filteredConversations.length === 0 ? (
             <p className="hint-text chat-empty">{labels.noMatchedConversations}</p>
           ) : (
-            <div className="chat-conversation-scroll">
-              <div className="chat-conversation-list">
-                {filteredConversations.map((conversation) => {
-                  const displayName = conversation.conversation.peerUsername || conversation.conversation.peerId;
-                  return (
-                    <button
-                      key={conversation.key}
-                      className={
-                        conversation.key === selectedConversationKey
-                          ? "chat-conversation-item active"
-                          : "chat-conversation-item"
-                      }
-                      onClick={() => setSelectedConversationKey(conversation.key)}
-                      type="button"
-                    >
-                      <ChatAvatar
-                        className="chat-conversation-avatar"
-                        baseUrl={session?.baseUrl ?? ""}
-                        username={displayName}
-                        preferredAvatarUrl={conversation.conversation.peerAvatarUrl}
-                        hasBadge={conversation.conversation.peerHasBadge}
-                        fallback={initialsFromName(displayName)}
-                      />
-                      <span className="chat-conversation-content">
-                        <span className="chat-conversation-top">
-                          <strong>{displayName}</strong>
-                          <time>{formatConversationTime(conversation.lastAt, locale)}</time>
-                        </span>
-                        <span className="chat-conversation-preview">{conversation.lastText}</span>
-                        <span className="chat-conversation-meta">
-                          <span>{conversation.messageCount}</span>
-                          {conversation.unreadCount > 0 ? (
-                            <span className="chat-conversation-unread">{conversation.unreadCount}</span>
-                          ) : null}
-                        </span>
+            <div className="chat-conversation-list">
+              {filteredConversations.map((conversation) => {
+                const displayName = conversation.conversation.peerUsername || conversation.conversation.peerId;
+                return (
+                  <button
+                    key={conversation.key}
+                    className={
+                      conversation.key === selectedConversationKey
+                        ? "chat-conversation-item active"
+                        : "chat-conversation-item"
+                    }
+                    onClick={() => handleOpenConversation(conversation.key)}
+                    type="button"
+                  >
+                    <ChatAvatar
+                      className="chat-conversation-avatar"
+                      baseUrl={session?.baseUrl ?? ""}
+                      username={displayName}
+                      preferredAvatarUrl={conversation.conversation.peerAvatarUrl}
+                      hasBadge={conversation.conversation.peerHasBadge}
+                      fallback={initialsFromName(displayName)}
+                    />
+                    <span className="chat-conversation-content">
+                      <span className="chat-conversation-top">
+                        <strong>{displayName}</strong>
+                        <time>{formatConversationTime(conversation.lastAt, locale)}</time>
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
+                      <span className="chat-conversation-preview">{conversation.lastText}</span>
+                      {conversation.unreadCount > 0 ? (
+                        <span className="chat-conversation-unread">{conversation.unreadCount}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </aside>
-
         <article className="card chat-thread-shell">
           <header className="chat-thread-header">
+            <button className="ghost-button chat-thread-back" onClick={handleBackToConversations} type="button">
+              {labels.backToConversations}
+            </button>
             {selectedConversation ? (
               <>
                 <ChatAvatar

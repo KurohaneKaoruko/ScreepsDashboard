@@ -2095,10 +2095,6 @@ a {
   text-align: center;
 }
 
-.chat-search-box {
-  display: block;
-}
-
 .chat-search-input {
   width: 100%;
   height: 34px;
@@ -2121,7 +2117,9 @@ a {
   background: #0c0c0c;
 }
 
-.chat-conversation-scroll {
+.chat-conversation-list {
+  display: grid;
+  gap: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: #080808;
@@ -2129,11 +2127,6 @@ a {
   overflow: auto;
   padding: 5px;
   min-height: 0;
-}
-
-.chat-conversation-list {
-  display: grid;
-  gap: 4px;
 }
 
 .chat-conversation-item {
@@ -2215,16 +2208,8 @@ a {
   text-overflow: ellipsis;
 }
 
-.chat-conversation-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: var(--text-soft);
-  font-size: 0.62rem;
-  line-height: 1;
-}
-
 .chat-conversation-unread {
+  justify-self: end;
   min-width: 17px;
   height: 17px;
   border: 1px solid #2f2f2f;
@@ -2307,6 +2292,15 @@ a {
 
 .chat-thread-size {
   margin-left: auto;
+}
+
+.chat-thread-back {
+  display: none;
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .messages-loading,
@@ -3635,19 +3629,40 @@ a {
 
   .chat-conversation-layout {
     grid-template-columns: 1fr;
-    min-height: 0;
-  }
-
-  .chat-conversation-layout {
+    --chat-pane-height: min(82dvh, calc(100dvh - 160px));
+    height: var(--chat-pane-height);
+    min-height: var(--chat-pane-height);
     gap: 8px;
   }
 
-  .chat-conversation-scroll {
-    max-height: min(36vh, 320px);
+  .chat-conversation-layout > .chat-conversation-card,
+  .chat-conversation-layout > .chat-thread-shell {
+    height: var(--chat-pane-height);
+    min-height: var(--chat-pane-height);
+  }
+
+  .chat-conversation-layout.mobile-list .chat-conversation-list {
+    max-height: none;
+  }
+
+  .chat-conversation-layout .chat-thread-shell {
+    display: none;
+  }
+
+  .chat-conversation-layout.mobile-thread .chat-thread-shell {
+    display: grid;
+  }
+
+  .chat-conversation-layout.mobile-thread .chat-conversation-card {
+    display: none;
+  }
+
+  .chat-thread-back {
+    display: inline-flex;
   }
 
   .chat-thread-shell {
-    min-height: min(62vh, 760px);
+    min-height: 0;
   }
 
   .chat-stream-scroll,
@@ -3696,6 +3711,33 @@ a {
 
   .chat-thread-shell {
     padding: 0;
+  }
+
+  .chat-conversation-layout {
+    --chat-pane-height: min(80dvh, calc(100dvh - 140px));
+    min-height: var(--chat-pane-height);
+    height: var(--chat-pane-height);
+  }
+
+  .chat-conversation-layout .chat-thread-shell {
+    display: none;
+  }
+
+  .chat-conversation-layout.mobile-thread .chat-thread-shell {
+    display: grid;
+  }
+
+  .chat-conversation-layout.mobile-thread .chat-conversation-card {
+    display: none;
+  }
+
+  .chat-thread-header {
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .chat-thread-back {
+    display: inline-flex;
   }
 
   .room-game-map-toolbar {
