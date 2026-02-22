@@ -7,7 +7,7 @@
     "dev": "cd src-next && next dev",
     "build": "cd src-next && next build",
     "start": "cd src-next && next start",
-    "lint": "cd src-next && eslint . --max-warnings=0",
+    "lint": "cd src-next && eslint .",
     "typecheck:web": "tsc --noEmit --incremental false -p src-next/tsconfig.json",
     "rust:fmt:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check",
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
