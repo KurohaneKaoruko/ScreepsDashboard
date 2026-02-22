@@ -5,25 +5,28 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+mod messages;
+use crate::messages::{screeps_messages_fetch, screeps_messages_fetch_thread};
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ScreepsRequest {
-    base_url: String,
-    endpoint: String,
-    method: Option<String>,
-    token: Option<String>,
-    username: Option<String>,
-    query: Option<HashMap<String, Value>>,
-    body: Option<Value>,
+pub(crate) struct ScreepsRequest {
+    pub(crate) base_url: String,
+    pub(crate) endpoint: String,
+    pub(crate) method: Option<String>,
+    pub(crate) token: Option<String>,
+    pub(crate) username: Option<String>,
+    pub(crate) query: Option<HashMap<String, Value>>,
+    pub(crate) body: Option<Value>,
 }
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct ScreepsResponse {
-    status: u16,
-    ok: bool,
-    data: Value,
-    url: String,
+pub(crate) struct ScreepsResponse {
+    pub(crate) status: u16,
+    pub(crate) ok: bool,
+    pub(crate) data: Value,
+    pub(crate) url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,7 +98,7 @@ fn cache_ttl_for_endpoint(endpoint: &str) -> Duration {
     }
 }
 
-fn shared_http_client() -> Result<&'static Client, String> {
+pub(crate) fn shared_http_client() -> Result<&'static Client, String> {
     HTTP_CLIENT
         .get_or_init(|| {
             Client::builder()
@@ -436,7 +439,7 @@ fn build_console_request_candidates(
     candidates
 }
 
-async fn perform_screeps_request(
+pub(crate) async fn perform_screeps_request(
     client: &Client,
     request: ScreepsRequest,
 ) -> Result<ScreepsResponse, String> {
@@ -646,7 +649,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             screeps_request,
             screeps_request_many,
-            screeps_console_execute
+            screeps_console_execute,
+            screeps_messages_fetch,
+            screeps_messages_fetch_thread
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

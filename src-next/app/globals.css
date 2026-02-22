@@ -2171,6 +2171,7 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   font-size: 0.66rem;
   font-weight: 700;
   color: #d4d4d4;
@@ -2265,10 +2266,26 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   font-size: 0.68rem;
   font-weight: 700;
   color: #dadada;
   background: #141414;
+}
+
+.chat-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.chat-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chat-thread-info {

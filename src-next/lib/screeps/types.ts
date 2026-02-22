@@ -348,6 +348,35 @@ export interface MessageSummary {
   createdAt?: string;
 }
 
+export interface ProcessedMessageParticipant {
+  id: string;
+  username: string;
+  isSelf: boolean;
+}
+
+export type ProcessedMessageDirection = "inbound" | "outbound";
+
+export interface ProcessedConversationMessage {
+  id: string;
+  createdAt?: string;
+  subject?: string;
+  text?: string;
+  sender: ProcessedMessageParticipant;
+  recipient: ProcessedMessageParticipant;
+  direction: ProcessedMessageDirection;
+  unread?: boolean;
+}
+
+export interface ProcessedConversation {
+  peerId: string;
+  peerUsername: string;
+  peerAvatarUrl?: string;
+  peerHasBadge?: boolean;
+  messages: ProcessedConversationMessage[];
+}
+
+export type ProcessedConversationMap = Record<string, ProcessedConversation>;
+
 export interface MessagesPage {
   fetchedAt: string;
   folder: MessageFolder;
