@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use crate::{perform_screeps_request, shared_http_client, ScreepsRequest};
+use crate::http::{perform_screeps_request, shared_http_client, ScreepsRequest};
 
 const DEFAULT_PER_CONVERSATION_LIMIT: usize = 200;
 const DEFAULT_MAX_CONVERSATIONS: usize = 200;
@@ -30,6 +30,25 @@ pub struct ScreepsMessagesThreadRequest {
     pub peer_avatar_url: Option<String>,
     pub peer_has_badge: Option<bool>,
     pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreepsMessagesSendRequest {
+    pub base_url: String,
+    pub token: String,
+    pub username: String,
+    pub respondent: String,
+    pub subject: Option<String>,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreepsMessagesSendResponse {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -178,6 +197,45 @@ fn payload_error(payload: &Value) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn payload_feedback(payload: &Value) -> Option<String> {
+    let mut stack = vec![payload];
+    while let Some(current) = stack.pop() {
+        match current {
+            Value::Array(items) => {
+                for item in items {
+                    stack.push(item);
+                }
+            }
+            Value::Object(map) => {
+                let text = map
+                    .get("message")
+                    .and_then(|value| value.as_str())
+                    .or_else(|| map.get("result").and_then(|value| value.as_str()))
+                    .or_else(|| map.get("status").and_then(|value| value.as_str()))
+                    .or_else(|| map.get("text").and_then(|value| value.as_str()))
+                    .map(|value| value.trim())
+                    .filter(|value| !value.is_empty());
+                if let Some(text) = text {
+                    if text != "1" && !text.eq_ignore_ascii_case("ok") {
+                        return Some(text.to_string());
+                    }
+                }
+                for value in map.values() {
+                    stack.push(value);
+                }
+            }
+            Value::String(text) => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() && trimmed != "1" && !trimmed.eq_ignore_ascii_case("ok") {
+                    return Some(trimmed.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn compare_message_time_asc(
     left: &ScreepsConversationMessageDto,
     right: &ScreepsConversationMessageDto,
@@ -241,7 +299,9 @@ fn to_conversation_message(
     })
 }
 
-async fn fetch_auth_profile(request: &ScreepsMessagesFetchRequest) -> Result<AuthMeResponse, String> {
+async fn fetch_auth_profile(
+    request: &ScreepsMessagesFetchRequest,
+) -> Result<AuthMeResponse, String> {
     let client = shared_http_client()?;
     let response = perform_screeps_request(
         client,
@@ -477,7 +537,8 @@ pub async fn screeps_messages_fetch_thread(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| peer_id.clone());
-    let peer_avatar_url = normalize_asset_url(&request.base_url, request.peer_avatar_url.as_deref());
+    let peer_avatar_url =
+        normalize_asset_url(&request.base_url, request.peer_avatar_url.as_deref());
     let peer_has_badge = request.peer_has_badge.unwrap_or(false);
     let per_limit = request
         .limit
@@ -514,11 +575,55 @@ pub async fn screeps_messages_fetch_thread(
         messages.drain(0..drain_count);
     }
 
-    Ok(ScreepsConversationDto {
-        peer_id,
-        peer_username,
-        peer_avatar_url,
-        peer_has_badge,
-        messages,
-    })
+    Ok(ScreepsConversationDto { peer_id, peer_username, peer_avatar_url, peer_has_badge, messages })
+}
+
+#[tauri::command]
+pub async fn screeps_messages_send(
+    request: ScreepsMessagesSendRequest,
+) -> Result<ScreepsMessagesSendResponse, String> {
+    if request.token.trim().is_empty() {
+        return Err("Token cannot be empty".to_string());
+    }
+    if request.username.trim().is_empty() {
+        return Err("Username cannot be empty".to_string());
+    }
+
+    let respondent = request.respondent.trim().to_string();
+    if respondent.is_empty() {
+        return Err("Respondent cannot be empty".to_string());
+    }
+    let text = request.text.trim().to_string();
+    if text.is_empty() {
+        return Err("Message body cannot be empty".to_string());
+    }
+    let subject = request.subject.unwrap_or_default().trim().to_string();
+
+    let client = shared_http_client()?;
+    let response = perform_screeps_request(
+        client,
+        ScreepsRequest {
+            base_url: request.base_url,
+            endpoint: "/api/user/messages/send".to_string(),
+            method: Some("POST".to_string()),
+            token: Some(request.token),
+            username: Some(request.username),
+            query: None,
+            body: Some(json!({
+                "respondent": respondent,
+                "subject": subject,
+                "text": text,
+            })),
+        },
+    )
+    .await?;
+
+    if !response.ok {
+        return Err(format!("messages send request failed: HTTP {}", response.status));
+    }
+    if let Some(error) = payload_error(&response.data) {
+        return Err(error);
+    }
+
+    Ok(ScreepsMessagesSendResponse { ok: true, feedback: payload_feedback(&response.data) })
 }

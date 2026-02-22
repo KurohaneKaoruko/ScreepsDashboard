@@ -356,6 +356,7 @@ export function MarketPanel() {
   const [resourceFilter, setResourceFilter] = useState("");
   const [activeOrder, setActiveOrder] = useState<MarketOrderSummary | null>(null);
   const [selectedRoomKey, setSelectedRoomKey] = useState("");
+  const [selectedDealShard, setSelectedDealShard] = useState("");
   const [amountInput, setAmountInput] = useState("1");
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -616,8 +617,20 @@ export function MarketPanel() {
     return shards;
   }, [roomOptions]);
 
+  const dealShardOptions = useMemo(() => {
+    const shards = new Set<string>(availableShards);
+    const orderShard = normalizeShard(activeOrder?.shard);
+    if (orderShard) {
+      shards.add(orderShard);
+    }
+    return sortShards(shards);
+  }, [activeOrder?.shard, availableShards]);
+
   const canPlaceOrder = useCallback(
     (order: MarketOrderSummary): boolean => {
+      if (isSpecialSelectedResource) {
+        return true;
+      }
       if (roomOptions.length === 0) {
         return false;
       }
@@ -627,7 +640,7 @@ export function MarketPanel() {
       }
       return ownedRoomShards.has(orderShard);
     },
-    [ownedRoomShards, roomOptions.length]
+    [isSpecialSelectedResource, ownedRoomShards, roomOptions.length]
   );
 
   const createOrderShardOptions = useMemo(() => {
@@ -764,6 +777,9 @@ export function MarketPanel() {
   ]);
 
   const eligibleRoomOptions = useMemo(() => {
+    if (isSpecialSelectedResource) {
+      return [];
+    }
     if (!activeOrder) {
       return roomOptions;
     }
@@ -772,7 +788,7 @@ export function MarketPanel() {
       return roomOptions;
     }
     return roomOptions.filter((option) => normalizeShard(option.room.shard) === orderShard);
-  }, [activeOrder, roomOptions]);
+  }, [activeOrder, isSpecialSelectedResource, roomOptions]);
 
   const selectedRoom = useMemo(() => {
     return eligibleRoomOptions.find((option) => option.key === selectedRoomKey)?.room;
@@ -797,14 +813,57 @@ export function MarketPanel() {
   }, [activeOrder, parsedAmount]);
 
   const transactionEnergyCost = useMemo(() => {
+    if (isSpecialSelectedResource) {
+      return undefined;
+    }
     if (!activeOrder || parsedAmount === undefined || !selectedRoom || !activeOrder.roomName) {
       return undefined;
     }
     return calcTransactionEnergyCost(parsedAmount, selectedRoom.name, activeOrder.roomName);
-  }, [activeOrder, parsedAmount, selectedRoom]);
+  }, [activeOrder, isSpecialSelectedResource, parsedAmount, selectedRoom]);
+
+  const orderSource = useMemo(() => {
+    if (!activeOrder) {
+      return "--";
+    }
+    if (isSpecialSelectedResource) {
+      const username = activeOrder.username?.trim();
+      return username || "--";
+    }
+    const shard = activeOrder.shard?.trim();
+    const roomName = activeOrder.roomName?.trim();
+    if (shard && roomName) {
+      return `${shard}/${roomName}`;
+    }
+    if (shard) {
+      return shard;
+    }
+    if (roomName) {
+      return roomName;
+    }
+    return "--";
+  }, [activeOrder, isSpecialSelectedResource]);
 
   const validationError = useMemo(() => {
     if (!activeOrder) {
+      return null;
+    }
+    if (parsedAmount === undefined) {
+      return t("market.validation.invalidAmount");
+    }
+    if (parsedAmount > activeOrder.remainingAmount) {
+      return t("market.validation.exceedRemaining");
+    }
+    if (creditsCost === undefined || resourceData?.credits === undefined) {
+      return t("market.validation.missingCredits");
+    }
+    if (creditsCost > resourceData.credits) {
+      return t("market.validation.insufficientCredits");
+    }
+    if (isSpecialSelectedResource) {
+      if (!selectedDealShard) {
+        return t("market.validation.selectShard");
+      }
       return null;
     }
     if (roomOptions.length === 0) {
@@ -816,20 +875,8 @@ export function MarketPanel() {
     if (!selectedRoom) {
       return t("market.validation.selectRoom");
     }
-    if (parsedAmount === undefined) {
-      return t("market.validation.invalidAmount");
-    }
-    if (parsedAmount > activeOrder.remainingAmount) {
-      return t("market.validation.exceedRemaining");
-    }
     if (!activeOrder.roomName) {
       return t("market.validation.missingOrderRoom");
-    }
-    if (creditsCost === undefined || resourceData?.credits === undefined) {
-      return t("market.validation.missingCredits");
-    }
-    if (creditsCost > resourceData.credits) {
-      return t("market.validation.insufficientCredits");
     }
     if (transactionEnergyCost === null) {
       return t("market.validation.unableCalcEnergy");
@@ -839,20 +886,28 @@ export function MarketPanel() {
     activeOrder,
     creditsCost,
     eligibleRoomOptions.length,
+    isSpecialSelectedResource,
     parsedAmount,
     resourceData?.credits,
     roomOptions.length,
+    selectedDealShard,
     selectedRoom,
     t,
     transactionEnergyCost,
   ]);
 
   const dealCode = useMemo(() => {
-    if (!activeOrder || parsedAmount === undefined || !selectedRoom) {
+    if (!activeOrder || parsedAmount === undefined) {
+      return "";
+    }
+    if (isSpecialSelectedResource) {
+      return buildDealCode(activeOrder.id, parsedAmount);
+    }
+    if (!selectedRoom) {
       return "";
     }
     return buildDealCode(activeOrder.id, parsedAmount, selectedRoom.name);
-  }, [activeOrder, parsedAmount, selectedRoom]);
+  }, [activeOrder, isSpecialSelectedResource, parsedAmount, selectedRoom]);
 
   useEffect(() => {
     if (!statusMessage) {
@@ -867,6 +922,7 @@ export function MarketPanel() {
   useEffect(() => {
     setActiveOrder(null);
     setSelectedRoomKey("");
+    setSelectedDealShard("");
     setAmountInput("1");
     setDialogError(null);
     setIsCreateOrderDialogOpen(false);
@@ -889,9 +945,31 @@ export function MarketPanel() {
     setSelectedRoomKey(eligibleRoomOptions[0]?.key ?? "");
   }, [activeOrder, eligibleRoomOptions, selectedRoomKey]);
 
+  useEffect(() => {
+    if (!activeOrder || !isSpecialSelectedResource) {
+      return;
+    }
+    if (selectedDealShard && dealShardOptions.includes(selectedDealShard)) {
+      return;
+    }
+    const fallbackShard =
+      normalizeShard(activeOrder.shard) ??
+      (selectedShard !== "all" ? normalizeShard(selectedShard) : undefined) ??
+      dealShardOptions[0] ??
+      "";
+    setSelectedDealShard(fallbackShard);
+  }, [
+    activeOrder,
+    dealShardOptions,
+    isSpecialSelectedResource,
+    selectedDealShard,
+    selectedShard,
+  ]);
+
   function closeDialog() {
     setActiveOrder(null);
     setSelectedRoomKey("");
+    setSelectedDealShard("");
     setAmountInput("1");
     setDialogError(null);
     setIsSubmitting(false);
@@ -900,6 +978,11 @@ export function MarketPanel() {
   function openDialog(order: MarketOrderSummary) {
     const defaultAmount = Math.max(1, Math.min(order.remainingAmount, 100_000));
     const orderShard = normalizeShard(order.shard);
+    const defaultDealShard =
+      orderShard ??
+      (selectedShard !== "all" ? normalizeShard(selectedShard) : undefined) ??
+      availableShards[0] ??
+      "";
     const defaultRoom =
       (orderShard
         ? roomOptions.find((option) => normalizeShard(option.room.shard) === orderShard)
@@ -908,7 +991,8 @@ export function MarketPanel() {
     setStatusMessage(null);
     setDialogError(null);
     setActiveOrder(order);
-    setSelectedRoomKey(defaultRoom?.key ?? "");
+    setSelectedRoomKey(isSpecialSelectedResource ? "" : defaultRoom?.key ?? "");
+    setSelectedDealShard(defaultDealShard);
     setAmountInput(String(defaultAmount));
   }
 
@@ -943,10 +1027,13 @@ export function MarketPanel() {
 
     setIsSubmitting(true);
     try {
+      const executionShard = isSpecialSelectedResource
+        ? normalizeShard(selectedDealShard)
+        : normalizeShard(selectedRoom?.shard ?? activeOrder?.shard);
       const result = await sendConsoleCommand(
         activeSession,
         dealCode,
-        normalizeShard(selectedRoom?.shard ?? activeOrder?.shard)
+        executionShard
       );
       setStatusMessage(result.feedback ?? t("market.status.commandSent"));
       closeDialog();
@@ -1284,7 +1371,18 @@ export function MarketPanel() {
       {activeOrder ? (
         <div className="market-modal-backdrop" role="presentation">
           <article className="card market-modal" role="dialog" aria-modal="true" aria-labelledby="market-order-dialog-title">
-            <h2 id="market-order-dialog-title">{t("market.dialogTitle")}</h2>
+            <div className="market-modal-header">
+              <h2 id="market-order-dialog-title">{t("market.dialogTitle")}</h2>
+              <button
+                className="ghost-button market-modal-close"
+                onClick={closeDialog}
+                type="button"
+                title={t("market.dialogCancel")}
+                aria-label={t("market.dialogCancel")}
+              >
+                x
+              </button>
+            </div>
             <div className="market-dialog-grid">
               <label className="field">
                 <span>{t("market.dialogOrderId")}</span>
@@ -1295,26 +1393,46 @@ export function MarketPanel() {
                 <input value={activeOrder.resourceType} readOnly />
               </label>
               <label className="field">
-                <span>{t("market.dialogOrderShard")}</span>
-                <input value={activeOrder.shard ?? "--"} readOnly />
+                <span>{t("market.dialogOrderSource")}</span>
+                <input value={orderSource} readOnly />
               </label>
-              <label className="field">
-                <span>{t("market.dialogRoom")}</span>
-                <select
-                  value={selectedRoomKey}
-                  onChange={(event) => {
-                    setSelectedRoomKey(event.currentTarget.value);
-                    setDialogError(null);
-                  }}
-                >
-                  <option value="">--</option>
-                  {eligibleRoomOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {isSpecialSelectedResource ? (
+                <label className="field">
+                  <span>{t("market.dialogDealShard")}</span>
+                  <select
+                    value={selectedDealShard}
+                    onChange={(event) => {
+                      setSelectedDealShard(event.currentTarget.value);
+                      setDialogError(null);
+                    }}
+                  >
+                    <option value="">--</option>
+                    {dealShardOptions.map((shard) => (
+                      <option key={shard} value={shard}>
+                        {shard}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="field">
+                  <span>{t("market.dialogDealRoom")}</span>
+                  <select
+                    value={selectedRoomKey}
+                    onChange={(event) => {
+                      setSelectedRoomKey(event.currentTarget.value);
+                      setDialogError(null);
+                    }}
+                  >
+                    <option value="">--</option>
+                    {eligibleRoomOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="field">
                 <span>{t("market.dialogAmount")}</span>
                 <input
@@ -1340,11 +1458,17 @@ export function MarketPanel() {
                 <strong className="metric-value">{formatPrice(creditsCost)}</strong>
               </div>
               <div className="metric-cell">
-                <span className="metric-label">{t("market.dialogEnergyCost")}</span>
-                <strong className="metric-value">
-                  {transactionEnergyCost === null ? t("market.dialogEnergyUnknown") : formatNumber(transactionEnergyCost, 0)}
-                </strong>
+                <span className="metric-label">{t("market.credits")}</span>
+                <strong className="metric-value">{formatPrice(resourceData?.credits)}</strong>
               </div>
+              {!isSpecialSelectedResource ? (
+                <div className="metric-cell">
+                  <span className="metric-label">{t("market.dialogEnergyCost")}</span>
+                  <strong className="metric-value">
+                    {transactionEnergyCost === null ? t("market.dialogEnergyUnknown") : formatNumber(transactionEnergyCost, 0)}
+                  </strong>
+                </div>
+              ) : null}
             </div>
 
             <div className="market-code-preview-wrap">
@@ -1375,7 +1499,18 @@ export function MarketPanel() {
       {isCreateOrderDialogOpen ? (
         <div className="market-modal-backdrop" role="presentation">
           <article className="card market-modal" role="dialog" aria-modal="true" aria-labelledby="market-create-order-dialog-title">
-            <h2 id="market-create-order-dialog-title">{t("market.createOrderTitle")}</h2>
+            <div className="market-modal-header">
+              <h2 id="market-create-order-dialog-title">{t("market.createOrderTitle")}</h2>
+              <button
+                className="ghost-button market-modal-close"
+                onClick={closeCreateOrderDialog}
+                type="button"
+                title={t("market.dialogCancel")}
+                aria-label={t("market.dialogCancel")}
+              >
+                x
+              </button>
+            </div>
             <div className="market-dialog-grid">
               <label className="field">
                 <span>{t("market.dialogResource")}</span>
@@ -1413,24 +1548,25 @@ export function MarketPanel() {
                   ))}
                 </select>
               </label>
-              <label className="field">
-                <span>{t("market.dialogRoom")}</span>
-                <select
-                  disabled={isSpecialSelectedResource}
-                  value={createOrderRoomKey}
-                  onChange={(event) => {
-                    setCreateOrderRoomKey(event.currentTarget.value);
-                    setCreateOrderError(null);
-                  }}
-                >
-                  <option value="">--</option>
-                  {createOrderRoomOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {!isSpecialSelectedResource ? (
+                <label className="field">
+                  <span>{t("market.dialogRoom")}</span>
+                  <select
+                    value={createOrderRoomKey}
+                    onChange={(event) => {
+                      setCreateOrderRoomKey(event.currentTarget.value);
+                      setCreateOrderError(null);
+                    }}
+                  >
+                    <option value="">--</option>
+                    {createOrderRoomOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="field">
                 <span>{t("market.createOrderPrice")}</span>
                 <input

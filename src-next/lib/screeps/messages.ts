@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { hasTauriRuntime } from "../runtime/platform";
-import { screepsRequest } from "./request";
 import type {
   ProcessedConversation,
   ProcessedConversationMap,
@@ -26,50 +25,18 @@ interface ScreepsMessagesThreadInvokeRequest {
   limit?: number;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return undefined;
+interface ScreepsMessagesSendInvokeRequest {
+  baseUrl: string;
+  token: string;
+  username: string;
+  respondent: string;
+  subject?: string;
+  text: string;
 }
 
-function asNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function extractResponseError(payload: unknown): string | undefined {
-  const record = asRecord(payload);
-  if (!record) {
-    return undefined;
-  }
-  return (
-    asNonEmptyString(record.error) ??
-    asNonEmptyString(record.err) ??
-    (record.ok === 0 || record.ok === false ? asNonEmptyString(record.message) : undefined)
-  );
-}
-
-function extractSendFeedback(payload: unknown): string | undefined {
-  const record = asRecord(payload);
-  if (!record) {
-    return undefined;
-  }
-  const text =
-    asNonEmptyString(record.message) ??
-    asNonEmptyString(record.result) ??
-    asNonEmptyString(record.status) ??
-    asNonEmptyString(record.text);
-  if (!text) {
-    return undefined;
-  }
-  if (text === "1" || /^ok$/i.test(text)) {
-    return undefined;
-  }
-  return text;
+interface ScreepsMessagesSendInvokeResponse {
+  ok: boolean;
+  feedback?: string;
 }
 
 export async function fetchProcessedMessages(
@@ -121,6 +88,9 @@ export async function sendMessage(
   session: ScreepsSession,
   input: SendMessageInput
 ): Promise<string | undefined> {
+  if (!hasTauriRuntime()) {
+    throw new Error("Messaging is only available in Tauri runtime.");
+  }
   const respondent = input.to.trim();
   const subject = (input.subject ?? "").trim();
   const text = input.text.trim();
@@ -132,22 +102,16 @@ export async function sendMessage(
     throw new Error("Message body cannot be empty.");
   }
 
-  const response = await screepsRequest({
+  const request: ScreepsMessagesSendInvokeRequest = {
     baseUrl: session.baseUrl,
-    endpoint: "/api/user/messages/send",
-    method: "POST",
-    body: { respondent, subject, text },
     token: session.token,
     username: session.username,
+    respondent,
+    subject,
+    text,
+  };
+  const response = await invoke<ScreepsMessagesSendInvokeResponse>("screeps_messages_send", {
+    request,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to send message: HTTP ${response.status}`);
-  }
-
-  const payloadError = extractResponseError(response.data);
-  if (payloadError) {
-    throw new Error(`Failed to send message: ${payloadError}`);
-  }
-  return extractSendFeedback(response.data);
+  return response.feedback;
 }

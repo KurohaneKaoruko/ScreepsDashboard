@@ -292,6 +292,7 @@ export interface MarketOrderSummary {
   totalAmount?: number;
   roomName?: string;
   shard?: string;
+  username?: string;
 }
 
 export interface MarketResourceOrders {

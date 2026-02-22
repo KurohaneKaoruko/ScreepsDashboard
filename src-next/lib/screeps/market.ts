@@ -148,6 +148,14 @@ function parseOrderRecord(
 ): MarketOrderSummary | null {
   const id = firstString([record._id, record.id, record.orderId]);
   const type = normalizeOrderType(record.type ?? record.orderType ?? record.mode);
+  const userRecord = asRecord(record.user);
+  const ownerRecord = asRecord(record.owner);
+  const username = firstString([
+    record.username,
+    record.userName,
+    userRecord?.username,
+    ownerRecord?.username,
+  ]);
   const resourceType = normalizeResourceType(
     firstString([record.resourceType, record.resource, record.mineralType, resourceTypeHint])
   );
@@ -174,6 +182,7 @@ function parseOrderRecord(
     totalAmount,
     roomName: normalizeRoomName(record.roomName ?? record.room),
     shard: normalizeShard(firstString([record.shard, record.shardName, record._shard, shardHint])),
+    username,
   };
 }
 
@@ -681,9 +690,13 @@ export function calcTransactionEnergyCost(
   return Math.max(0, energyCost);
 }
 
-export function buildDealCode(orderId: string, amount: number, roomName: string): string {
+export function buildDealCode(orderId: string, amount: number, roomName?: string): string {
   const normalizedAmount = Math.max(1, Math.floor(amount));
-  return `Game.market.deal(${JSON.stringify(orderId)}, ${normalizedAmount}, ${JSON.stringify(roomName)});`;
+  const normalizedRoomName = typeof roomName === "string" ? roomName.trim() : "";
+  if (!normalizedRoomName) {
+    return `Game.market.deal(${JSON.stringify(orderId)}, ${normalizedAmount});`;
+  }
+  return `Game.market.deal(${JSON.stringify(orderId)}, ${normalizedAmount}, ${JSON.stringify(normalizedRoomName)});`;
 }
 
 export function buildCreateOrderCode(

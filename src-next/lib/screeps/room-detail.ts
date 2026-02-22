@@ -1,5 +1,7 @@
+import { invoke } from "@tauri-apps/api/core";
 import { screepsBatchRequest, screepsRequest } from "./request";
 import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
+import { hasTauriRuntime } from "../runtime/platform";
 import type {
   QueryParams,
   RoomCreepSummary,
@@ -1422,6 +1424,26 @@ export async function fetchRoomDetailSnapshot(
 ): Promise<RoomDetailSnapshot> {
   const roomName = normalizeRoomName(roomInput);
   const shard = normalizeShard(shardInput);
+
+  if (hasTauriRuntime()) {
+    return invoke<RoomDetailSnapshot>("screeps_room_detail_fetch", {
+      request: {
+        baseUrl: session.baseUrl,
+        token: session.token,
+        username: session.username,
+        roomName,
+        shard,
+        roomsEndpoint: session.endpointMap.rooms
+          ? {
+              endpoint: session.endpointMap.rooms.endpoint,
+              method: session.endpointMap.rooms.method,
+              query: session.endpointMap.rooms.query,
+              body: session.endpointMap.rooms.body,
+            }
+          : undefined,
+      },
+    });
+  }
 
   const [terrainPayload, mapStatsPayload, overviewPayload, roomObjectsPayload, roomsPayload] =
     await Promise.all([

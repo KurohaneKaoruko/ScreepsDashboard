@@ -2925,6 +2925,31 @@ a {
   gap: 10px;
 }
 
+.market-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.market-modal-header h2 {
+  margin: 0;
+}
+
+.market-modal-close {
+  min-width: 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: #3a3a3a;
+  color: #d3d3d3;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
 .market-dialog-grid {
   display: grid;
   gap: 8px;
