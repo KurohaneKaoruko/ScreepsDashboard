@@ -49,11 +49,11 @@ jobs:
       - name: Typecheck frontend
         run: pnpm run typecheck:web
 
+      - name: Build frontend export
+        run: pnpm run build
+
       - name: Check Rust formatting
         run: pnpm run rust:fmt:check
 
       - name: Run Rust clippy
         run: pnpm run rust:clippy
-
-      - name: Build frontend export
-        run: pnpm run build
