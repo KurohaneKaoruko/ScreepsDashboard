@@ -12,10 +12,13 @@ function printUsage() {
   node scripts/release/verify-tag-version.mjs v1.2.3`);
 }
 
-const tag = process.argv[2];
-if (!tag || tag === "--help" || tag === "-h") {
+const argv = process.argv.slice(2);
+const showHelp = argv.includes("--help") || argv.includes("-h");
+const tag = argv.find((arg) => arg !== "--" && !arg.startsWith("-"));
+
+if (!tag || showHelp) {
   printUsage();
-  process.exit(tag ? 0 : 1);
+  process.exit(showHelp ? 0 : 1);
 }
 
 const expectedVersion = normalizeVersion(tag);

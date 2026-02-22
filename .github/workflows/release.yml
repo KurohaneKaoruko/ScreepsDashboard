@@ -27,7 +27,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Verify tag and project version match
-        run: pnpm run version:verify-tag -- ${{ github.ref_name }}
+        run: node scripts/release/verify-tag-version.mjs ${{ github.ref_name }}
 
   publish-desktop:
     needs: verify-version
