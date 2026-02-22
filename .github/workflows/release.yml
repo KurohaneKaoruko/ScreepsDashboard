@@ -88,7 +88,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Add Rust target for Windows ARM64
-        if: matrix.args == '--target aarch64-pc-windows-msvc'
+        if: startsWith(matrix.args, '--target aarch64-pc-windows-msvc')
         run: rustup target add aarch64-pc-windows-msvc
 
       - name: Add Rust targets for macOS universal
