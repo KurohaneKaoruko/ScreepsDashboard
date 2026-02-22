@@ -10,8 +10,8 @@ import {
   calcTransactionEnergyCost,
   fetchMarketResourceCatalog,
   fetchMarketResourceSnapshot,
-  sendConsoleCommand,
 } from "../lib/screeps/market";
+import { sendConsoleCommand } from "../lib/screeps/console";
 import {
   fetchDashboardSnapshot,
   toDashboardRoomKey,
@@ -943,12 +943,12 @@ export function MarketPanel() {
 
     setIsSubmitting(true);
     try {
-      const feedback = await sendConsoleCommand(
+      const result = await sendConsoleCommand(
         activeSession,
         dealCode,
         normalizeShard(selectedRoom?.shard ?? activeOrder?.shard)
       );
-      setStatusMessage(feedback ?? t("market.status.commandSent"));
+      setStatusMessage(result.feedback ?? t("market.status.commandSent"));
       closeDialog();
       void mutateResource();
     } catch (error) {
@@ -970,8 +970,8 @@ export function MarketPanel() {
     }
     setIsCreateSubmitting(true);
     try {
-      const feedback = await sendConsoleCommand(activeSession, createOrderCode, createOrderShard);
-      setStatusMessage(feedback ?? t("market.status.createOrderSent"));
+      const result = await sendConsoleCommand(activeSession, createOrderCode, createOrderShard);
+      setStatusMessage(result.feedback ?? t("market.status.createOrderSent"));
       closeCreateOrderDialog();
       void mutateResource();
     } catch (error) {

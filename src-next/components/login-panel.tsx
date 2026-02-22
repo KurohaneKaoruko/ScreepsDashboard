@@ -6,6 +6,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../lib/i18n/use-i18n";
 import {
   buildOptimisticEndpointMap,
+  extractUserId,
   extractUsername,
   type ProfileProbeSummary,
   probeProfileEndpoint,
@@ -276,6 +277,9 @@ export function LoginPanel() {
         baseUrl,
         token: resolvedToken,
         username: initialDisplayName,
+        userId: profileProbe?.profileSample
+          ? extractUserId(profileProbe.profileSample)
+          : undefined,
         endpointMap: buildOptimisticEndpointMap(
           profileProbe?.profileEndpoint,
           profileProbe?.profileSample
@@ -305,8 +309,10 @@ export function LoginPanel() {
           }
 
           const displayName = extractUsername(probeSummary.profileSample, fallbackName);
+          const userId = extractUserId(probeSummary.profileSample);
           patchSession({
             username: displayName,
+            userId,
             endpointMap: probeSummary.endpointMap,
             verifiedAt: probeSummary.verifiedAt,
             probes: probeSummary.probes,

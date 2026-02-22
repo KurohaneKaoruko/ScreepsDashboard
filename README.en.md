@@ -14,6 +14,7 @@ Screeps Dashboard is a cross-platform client built with `Tauri 2 + Next.js 15` f
 - Rankings (`/rankings`): `global/season` modes, dimensions, pagination, filtering.
 - Settings (`/settings`): language switch (`zh-CN` / `en-US`), server/account management.
 - Request pipeline: Tauri Rust command `screeps_request` first, browser `fetch` fallback.
+- Console execution pipeline: desktop uses Tauri Rust command `screeps_console_execute`; browser request fallback is only used when Tauri invocation fails.
 
 ## Tech Stack
 
@@ -31,7 +32,7 @@ ScreepsDashboard/
 |   |-- lib/screeps/                # Screeps API adapters and data logic
 |   `-- stores/                     # Zustand stores
 |-- src-tauri/                      # Tauri + Rust
-|   |-- src/lib.rs                  # screeps_request implementation
+|   |-- src/lib.rs                  # screeps_request / screeps_console_execute
 |   `-- tauri.conf.json             # Tauri config
 |-- scripts/
 |-- package.json

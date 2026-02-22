@@ -51,6 +51,7 @@ export interface ScreepsSession {
   baseUrl: string;
   token: string;
   username: string;
+  userId?: string;
   endpointMap: EndpointMap;
   verifiedAt: string;
   probes: EndpointProbe[];
@@ -372,6 +373,7 @@ export type ConsoleStreamKind = "stdout" | "error" | "system";
 export interface ConsoleStreamRecord {
   id: string;
   channel: string;
+  shard?: string;
   text: string;
   receivedAt: string;
   kind: ConsoleStreamKind;

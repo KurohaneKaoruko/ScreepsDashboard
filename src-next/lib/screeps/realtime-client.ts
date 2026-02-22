@@ -20,6 +20,8 @@ export interface ScreepsRealtimeClientOptions {
 type RealtimeHandler = (event: ScreepsRealtimeEvent) => void;
 
 const AUTH_REFRESH_INTERVAL_MS = 45_000;
+const AUTH_USER_ID_PATTERN =
+  /\b(?:[0-9a-f]{24}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -62,7 +64,9 @@ function parseTextPayload(rawPayload: string): unknown {
 
 function normalizeAuthStatus(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim()) {
-    return value.trim().toLowerCase();
+    const normalized = value.trim();
+    const [head] = normalized.split(/\s+/);
+    return (head ?? normalized).toLowerCase();
   }
 
   const record = asRecord(value);
@@ -73,12 +77,31 @@ function normalizeAuthStatus(value: unknown): string | undefined {
   const candidates = [record.status, record.result, record.message];
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim()) {
-      return candidate.trim().toLowerCase();
+      const normalized = candidate.trim();
+      const [head] = normalized.split(/\s+/);
+      return (head ?? normalized).toLowerCase();
     }
   }
 
   return undefined;
 }
+
+function extractAuthUserIdFromText(value: string): string | undefined {
+  const match = value.match(AUTH_USER_ID_PATTERN);
+  return match?.[0];
+}
+
+function parseAuthPayloadText(value: string): { status: string; userId?: string; raw: string } {
+  const normalized = value.trim();
+  const [head] = normalized.split(/\s+/);
+  const status = (head ?? normalized).toLowerCase();
+  return {
+    status,
+    userId: extractAuthUserIdFromText(normalized),
+    raw: normalized,
+  };
+}
+
 
 function parseSocketArrayPayload(
   value: unknown
@@ -194,7 +217,7 @@ function parseSocketLine(line: string): { channel: string; payload: unknown } | 
   if (channel === "auth" && typeof payload === "string") {
     return {
       channel,
-      payload: { status: payload },
+      payload: parseAuthPayloadText(payload),
     };
   }
 

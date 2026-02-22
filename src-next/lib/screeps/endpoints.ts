@@ -119,7 +119,7 @@ function findString(value: unknown): string | null {
   return null;
 }
 
-function extractUserId(payload: unknown): string | undefined {
+export function extractUserId(payload: unknown): string | undefined {
   const root = asRecord(payload) ?? {};
   const user = asRecord(root.user) ?? {};
   return (

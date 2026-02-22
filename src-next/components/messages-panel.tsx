@@ -460,29 +460,56 @@ export function MessagesPanel() {
   }, [loadMessages, sessionKey]);
 
   useEffect(() => {
-    if (!conversations.length) {
-      setSelectedConversationKey("");
-      return;
-    }
-    const stillValid = conversations.some((item) => item.key === selectedConversationKey);
-    if (stillValid) {
-      return;
-    }
-    setSelectedConversationKey(conversations[0].key);
-  }, [conversations, selectedConversationKey]);
+    setSelectedConversationKey((current) => {
+      if (!conversations.length) {
+        return current ? "" : current;
+      }
+      const stillValid = conversations.some((item) => item.key === current);
+      if (stillValid) {
+        return current;
+      }
+      return conversations[0].key;
+    });
+  }, [conversations]);
 
   useEffect(() => {
-    if (!session || conversations.length === 0) {
-      setDisplayNameMap({});
+    if (!session) {
+      setDisplayNameMap((current) => (Object.keys(current).length > 0 ? {} : current));
       return;
     }
-    const ids = conversations.map((item) => item.peer);
+    const ids = [
+      ...new Set(
+        conversations
+          .flatMap((item) => [item.peer, item.key])
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0 && isLikelyAccountId(item))
+      ),
+    ];
+    if (ids.length === 0) {
+      return;
+    }
     let cancelled = false;
     void resolveUsernamesByIds(session, ids).then((result) => {
       if (cancelled) {
         return;
       }
-      setDisplayNameMap(result);
+      setDisplayNameMap((current) => {
+        let changed = false;
+        const next: Record<string, string> = { ...current };
+        for (const [key, value] of Object.entries(result)) {
+          const normalizedKey = key.trim();
+          const normalizedValue = value.trim();
+          if (!normalizedKey || !normalizedValue) {
+            continue;
+          }
+          if (next[normalizedKey] === normalizedValue) {
+            continue;
+          }
+          next[normalizedKey] = normalizedValue;
+          changed = true;
+        }
+        return changed ? next : current;
+      });
     });
     return () => {
       cancelled = true;

@@ -14,6 +14,7 @@ Screeps Dashboard 是一个基于 `Tauri 2 + Next.js 15` 的跨平台客户端�
 - 排行榜（`/rankings`）：`global/season` 模式、维度切换、分页和过滤。
 - 设置中心（`/settings`）：语言切换（`zh-CN` / `en-US`）、服务器与账号管理。
 - 网络请求链路：优先走 Tauri Rust 命令 `screeps_request`，失败时回退浏览器 `fetch`。
+- 控制台执行链路：桌面端优先走 Tauri Rust 命令 screeps_console_execute，仅在 Tauri 调用失败时回退浏览器请求。
 
 ## 技术栈
 
@@ -31,7 +32,7 @@ ScreepsDashboard/
 |   |-- lib/screeps/                # Screeps API 适配与数据逻辑
 |   `-- stores/                     # Zustand 状态存储
 |-- src-tauri/                      # Tauri + Rust
-|   |-- src/lib.rs                  # screeps_request 命令实现
+|   |-- src/lib.rs                  # screeps_request / screeps_console_execute 命令实现
 |   `-- tauri.conf.json             # Tauri 配置
 |-- scripts/
 |-- package.json

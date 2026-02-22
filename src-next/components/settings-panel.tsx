@@ -3,10 +3,15 @@
 import { type FormEvent, useMemo, useState } from "react";
 import type { Locale } from "../lib/i18n/dict";
 import { useI18n } from "../lib/i18n/use-i18n";
-import { useSettingsStore, type MapRendererMode } from "../stores/settings-store";
+import {
+  useSettingsStore,
+  type ConsoleSendMode,
+  type MapRendererMode,
+} from "../stores/settings-store";
 
 const AVAILABLE_LOCALES: Locale[] = ["zh-CN", "en-US"];
 const MAP_RENDERER_MODES: readonly MapRendererMode[] = ["official", "optimized"];
+const CONSOLE_SEND_MODES: readonly ConsoleSendMode[] = ["enter", "ctrlEnter"];
 
 export function SettingsPanel() {
   const { locale, setLocale, t } = useI18n();
@@ -16,11 +21,13 @@ export function SettingsPanel() {
   const activeServerId = useSettingsStore((state) => state.activeServerId);
   const activeAccountId = useSettingsStore((state) => state.activeAccountId);
   const mapRendererMode = useSettingsStore((state) => state.mapRendererMode);
+  const consoleSendMode = useSettingsStore((state) => state.consoleSendMode);
 
   const addAccount = useSettingsStore((state) => state.addAccount);
   const removeAccount = useSettingsStore((state) => state.removeAccount);
   const setActiveAccountId = useSettingsStore((state) => state.setActiveAccountId);
   const setMapRendererMode = useSettingsStore((state) => state.setMapRendererMode);
+  const setConsoleSendMode = useSettingsStore((state) => state.setConsoleSendMode);
 
   const [accountLabel, setAccountLabel] = useState("");
   const [accountUsername, setAccountUsername] = useState("");
@@ -93,6 +100,30 @@ export function SettingsPanel() {
                 key={mode}
                 className={checked ? "language-option active" : "language-option"}
                 onClick={() => setMapRendererMode(mode)}
+                type="button"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </article>
+
+      <article className="card">
+        <h2>{t("settings.consoleTitle")}</h2>
+        <p className="hint-text">{t("settings.consoleSendMode")}</p>
+        <div className="language-grid">
+          {CONSOLE_SEND_MODES.map((mode) => {
+            const checked = mode === consoleSendMode;
+            const label =
+              mode === "enter"
+                ? t("settings.consoleSendModeEnter")
+                : t("settings.consoleSendModeCtrlEnter");
+            return (
+              <button
+                key={mode}
+                className={checked ? "language-option active" : "language-option"}
+                onClick={() => setConsoleSendMode(mode)}
                 type="button"
               >
                 {label}
