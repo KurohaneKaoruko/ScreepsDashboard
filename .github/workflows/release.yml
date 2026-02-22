@@ -14,14 +14,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Verify tag and project version match
-        run: npm run version:verify-tag -- ${{ github.ref_name }}
+        run: pnpm run version:verify-tag -- ${{ github.ref_name }}
 
   publish-desktop:
     needs: verify-version
@@ -54,6 +60,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Install Linux system dependencies
         if: startsWith(matrix.platform, 'ubuntu-')
         run: |
@@ -69,7 +80,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -83,7 +95,7 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Resolve release metadata
         id: release_meta
@@ -150,11 +162,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -178,13 +196,13 @@ jobs:
           echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Android APK
-        run: npm run package:target -- android-apk
+        run: pnpm run package:target -- android-apk
 
       - name: Build Android AAB
-        run: npm run package:target -- android-aab
+        run: pnpm run package:target -- android-aab
 
       - name: Upload Android artifacts to release
         uses: softprops/action-gh-release@v2
@@ -206,11 +224,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -219,19 +243,19 @@ jobs:
         run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Initialize iOS project (best effort)
         continue-on-error: true
         shell: bash
         run: |
           if [ ! -d "src-tauri/gen/apple" ]; then
-            npm run tauri -- ios init
+            pnpm run tauri -- ios init
           fi
 
       - name: Build iOS bundle (best effort)
         continue-on-error: true
-        run: npm run package:target -- ios
+        run: pnpm run package:target -- ios
 
       - name: Prepare iOS artifacts
         id: ios_assets

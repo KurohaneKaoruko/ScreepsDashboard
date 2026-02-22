@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import {
@@ -228,6 +229,19 @@ function readBodyFromFile(filePath) {
   return content.replace(/\r\n/g, "\n").trimEnd();
 }
 
+function getReleaseCommitFiles() {
+  const files = ["package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"];
+
+  if (existsSync(resolve(projectRoot, "src-tauri", "Cargo.lock"))) {
+    files.push("src-tauri/Cargo.lock");
+  }
+  if (existsSync(resolve(projectRoot, "Cargo.lock"))) {
+    files.push("Cargo.lock");
+  }
+
+  return files;
+}
+
 async function askVersion(defaultVersion) {
   if (!stdin.isTTY) {
     throw new Error("No interactive terminal detected. Please pass --version.");
@@ -363,7 +377,7 @@ async function main() {
   }
 
   if (anyVersionFileChanged) {
-    run("git", ["add", "package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"]);
+    run("git", ["add", ...getReleaseCommitFiles()]);
     run("git", ["commit", "-m", `release: ${tag}`]);
   }
   createAnnotatedTag(tag, releaseTitle, releaseBody);
