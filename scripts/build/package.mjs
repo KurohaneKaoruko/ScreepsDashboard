@@ -21,32 +21,63 @@ const tauriCliPath = resolve(
   "tauri.js",
 );
 const distRoot = resolve(projectRoot, "dist");
+const WINDOWS_AMD64_TRIPLE = "x86_64-pc-windows-msvc";
+const WINDOWS_ARM64_TRIPLE = "aarch64-pc-windows-msvc";
+const MACOS_UNIVERSAL_TRIPLE = "universal-apple-darwin";
+const LINUX_AMD64_TRIPLE = "x86_64-unknown-linux-gnu";
+const LINUX_ARM64_TRIPLE = "aarch64-unknown-linux-gnu";
+const ANDROID_ABI_TARGETS = ["aarch64", "armv7", "x86_64", "i686"];
 
 const TARGETS = {
-  windows: {
-    label: "windows",
+  "windows-amd64": {
+    label: "windows-amd64",
     hostPlatform: "win32",
-    tauriArgs: ["build", "--target", "x86_64-pc-windows-msvc"],
+    tauriArgs: ["build", "--target", WINDOWS_AMD64_TRIPLE],
+  },
+  "windows-arm64": {
+    label: "windows-arm64",
+    hostPlatform: "win32",
+    tauriArgs: ["build", "--target", WINDOWS_ARM64_TRIPLE],
+  },
+  "windows-all": {
+    label: "windows-all",
+    hostPlatform: "win32",
+    composedTargets: ["windows-amd64", "windows-arm64"],
   },
   macos: {
     label: "macos",
     hostPlatform: "darwin",
-    tauriArgs: ["build", "--target", "universal-apple-darwin"],
+    tauriArgs: ["build", "--target", MACOS_UNIVERSAL_TRIPLE],
   },
-  linux: {
-    label: "linux",
+  "linux-amd64": {
+    label: "linux-amd64",
     hostPlatform: "linux",
-    tauriArgs: ["build", "--target", "x86_64-unknown-linux-gnu"],
+    tauriArgs: ["build", "--target", LINUX_AMD64_TRIPLE],
+  },
+  "linux-arm64": {
+    label: "linux-arm64",
+    hostPlatform: "linux",
+    tauriArgs: ["build", "--target", LINUX_ARM64_TRIPLE],
+  },
+  "linux-all": {
+    label: "linux-all",
+    hostPlatform: "linux",
+    composedTargets: ["linux-amd64", "linux-arm64"],
   },
   "android-apk": {
     label: "android-apk",
     envVars: ["ANDROID_HOME", "NDK_HOME"],
-    tauriArgs: ["android", "build", "--ci", "--apk", "--target", "aarch64", "armv7"],
+    tauriArgs: ["android", "build", "--ci", "--apk", "--target", ...ANDROID_ABI_TARGETS],
   },
   "android-aab": {
     label: "android-aab",
     envVars: ["ANDROID_HOME", "NDK_HOME"],
-    tauriArgs: ["android", "build", "--ci", "--aab", "--target", "aarch64", "armv7"],
+    tauriArgs: ["android", "build", "--ci", "--aab", "--target", ...ANDROID_ABI_TARGETS],
+  },
+  "android-all": {
+    label: "android-all",
+    envVars: ["ANDROID_HOME", "NDK_HOME"],
+    composedTargets: ["android-apk", "android-aab"],
   },
   ios: {
     label: "ios",
@@ -56,6 +87,24 @@ const TARGETS = {
 };
 
 const ALIASES = {
+  windows: "windows-amd64",
+  win: "windows-amd64",
+  amd64: "windows-amd64",
+  x64: "windows-amd64",
+  "windows:all": "windows-all",
+  arm64: "windows-arm64",
+  "windows-arm": "windows-arm64",
+  "windows-aarch64": "windows-arm64",
+  linux: "linux-amd64",
+  "linux-x64": "linux-amd64",
+  "linux-amd64": "linux-amd64",
+  "linux-arm": "linux-arm64",
+  "linux-aarch64": "linux-arm64",
+  "linux:all": "linux-all",
+  mac: "macos",
+  "macos-universal": "macos",
+  android: "android-all",
+  "android:all": "android-all",
   "android:apk": "android-apk",
   "android:aab": "android-aab",
   apk: "android-apk",
@@ -65,29 +114,41 @@ const ALIASES = {
 };
 
 const ARTIFACT_RULES = {
-  windows: {
+  "windows-amd64": {
     roots: [resolve(projectRoot, "src-tauri", "target")],
     suffixes: [".msi", "-setup.exe"],
-    mustInclude: ["/bundle/"],
+    mustInclude: [`/${WINDOWS_AMD64_TRIPLE}/`, "/bundle/"],
+    fallbackCount: 4,
+  },
+  "windows-arm64": {
+    roots: [resolve(projectRoot, "src-tauri", "target")],
+    suffixes: [".msi", "-setup.exe"],
+    mustInclude: [`/${WINDOWS_ARM64_TRIPLE}/`, "/bundle/"],
     fallbackCount: 4,
   },
   macos: {
     roots: [resolve(projectRoot, "src-tauri", "target")],
     suffixes: [".dmg", ".app.tar.gz", ".pkg"],
-    mustInclude: ["/bundle/"],
+    mustInclude: [`/${MACOS_UNIVERSAL_TRIPLE}/`, "/bundle/"],
     fallbackCount: 4,
   },
-  linux: {
+  "linux-amd64": {
     roots: [resolve(projectRoot, "src-tauri", "target")],
     suffixes: [".appimage", ".deb", ".rpm", ".tar.gz"],
-    mustInclude: ["/bundle/"],
+    mustInclude: [`/${LINUX_AMD64_TRIPLE}/`, "/bundle/"],
+    fallbackCount: 6,
+  },
+  "linux-arm64": {
+    roots: [resolve(projectRoot, "src-tauri", "target")],
+    suffixes: [".appimage", ".deb", ".rpm", ".tar.gz"],
+    mustInclude: [`/${LINUX_ARM64_TRIPLE}/`, "/bundle/"],
     fallbackCount: 6,
   },
   "android-apk": {
     roots: [resolve(projectRoot, "src-tauri", "gen", "android", "app", "build", "outputs", "apk")],
     suffixes: [".apk"],
     mustInclude: ["/release/"],
-    fallbackCount: 3,
+    fallbackCount: 10,
   },
   "android-aab": {
     roots: [resolve(projectRoot, "src-tauri", "gen", "android", "app", "build", "outputs", "bundle")],
@@ -111,15 +172,24 @@ function printUsage() {
   scripts\\build\\package.bat <target> [tauri_args...]
 
 Targets:
-  windows
+  windows-amd64 (alias: windows, win, amd64, x64)
+  windows-arm64 (alias: arm64, windows-arm, windows-aarch64)
+  windows-all (alias: windows:all)
   macos
-  linux
+  linux-amd64 (alias: linux, linux-x64)
+  linux-arm64 (alias: linux-arm, linux-aarch64)
+  linux-all (alias: linux:all)
   android-apk (alias: android:apk, apk)
   android-aab (alias: android:aab, aab)
+  android-all (alias: android, android:all)
   ios (alias: iphone, ipad)
 
 Examples:
-  npm run package:target -- windows --ci
+  npm run package:target -- windows-amd64 --ci
+  npm run package:target -- windows-arm64 --ci
+  npm run package:target -- windows-all --ci
+  npm run package:target -- linux-all --ci
+  npm run package:target -- android-all --ci
   npm run package:target -- android-apk --debug
   npm run package:target -- ios --export-method app-store-connect
 
@@ -241,6 +311,77 @@ function copyArtifactsToDist(targetKey, label, buildStartedAtMs) {
   }
 }
 
+function ensureTargetReady(target) {
+  if (target.hostPlatform && process.platform !== target.hostPlatform) {
+    fail(
+      `[package:${target.label}] This target must run on ${target.hostPlatform}. Current: ${process.platform}.`,
+    );
+  }
+
+  if (target.envVars) {
+    const missingVars = target.envVars.filter((name) => !process.env[name]);
+    if (missingVars.length > 0) {
+      fail(
+        `[package:${target.label}] Missing required environment variables: ${missingVars.join(", ")}`,
+      );
+    }
+  }
+
+  if (!existsSync(tauriCliPath)) {
+    fail(`[package:${target.label}] Tauri CLI not found: ${tauriCliPath}. Run npm install first.`);
+  }
+}
+
+function runSingleTargetBuild(targetKey, target, passthroughArgs) {
+  const buildStartedAtMs = Date.now();
+  const result = spawnSync(
+    process.execPath,
+    [tauriCliPath, ...target.tauriArgs, ...passthroughArgs],
+    {
+      cwd: projectRoot,
+      stdio: "inherit",
+      env: process.env,
+    },
+  );
+
+  if (result.error) {
+    fail(`[package:${target.label}] Failed to start build: ${result.error.message}`);
+  }
+
+  const status = result.status ?? 1;
+  if (status !== 0) {
+    process.exit(status);
+  }
+
+  copyArtifactsToDist(targetKey, target.label, buildStartedAtMs);
+}
+
+function runTargetBuild(targetKey, passthroughArgs, visiting = new Set()) {
+  const target = TARGETS[targetKey];
+  if (!target) {
+    fail(`Unknown target: ${targetKey}`);
+  }
+
+  ensureTargetReady(target);
+  if (!target.composedTargets) {
+    runSingleTargetBuild(targetKey, target, passthroughArgs);
+    return;
+  }
+
+  if (visiting.has(targetKey)) {
+    fail(`[package:${target.label}] Circular composed target reference detected.`);
+  }
+
+  visiting.add(targetKey);
+  console.log(
+    `[package:${target.label}] Running composed target: ${target.composedTargets.join(", ")}`,
+  );
+  for (const childKey of target.composedTargets) {
+    runTargetBuild(childKey, passthroughArgs, visiting);
+  }
+  visiting.delete(targetKey);
+}
+
 const args = process.argv.slice(2);
 if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
   printUsage();
@@ -249,51 +390,11 @@ if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
 
 const requestedTarget = args[0].toLowerCase();
 const targetKey = ALIASES[requestedTarget] ?? requestedTarget;
-const target = TARGETS[targetKey];
 const passthroughArgs = args.slice(1);
 
-if (!target) {
+if (!TARGETS[targetKey]) {
   printUsage();
   fail(`Unknown target: ${requestedTarget}`);
 }
 
-if (target.hostPlatform && process.platform !== target.hostPlatform) {
-  fail(
-    `[package:${target.label}] This target must run on ${target.hostPlatform}. Current: ${process.platform}.`,
-  );
-}
-
-if (target.envVars) {
-  const missingVars = target.envVars.filter((name) => !process.env[name]);
-  if (missingVars.length > 0) {
-    fail(
-      `[package:${target.label}] Missing required environment variables: ${missingVars.join(", ")}`,
-    );
-  }
-}
-
-if (!existsSync(tauriCliPath)) {
-  fail(`[package:${target.label}] Tauri CLI not found: ${tauriCliPath}. Run npm install first.`);
-}
-
-const buildStartedAtMs = Date.now();
-const result = spawnSync(
-  process.execPath,
-  [tauriCliPath, ...target.tauriArgs, ...passthroughArgs],
-  {
-    cwd: projectRoot,
-    stdio: "inherit",
-    env: process.env,
-  },
-);
-
-if (result.error) {
-  fail(`[package:${target.label}] Failed to start build: ${result.error.message}`);
-}
-
-const status = result.status ?? 1;
-if (status !== 0) {
-  process.exit(status);
-}
-
-copyArtifactsToDist(targetKey, target.label, buildStartedAtMs);
+runTargetBuild(targetKey, passthroughArgs);

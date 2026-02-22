@@ -94,6 +94,14 @@ npm run tauri:android:init
 npm run tauri:android:dev
 npm run tauri:android:build:apk
 npm run tauri:android:build:aab
+npm run tauri:android:build:all
+
+# Multi-arch packaging shortcuts
+npm run package:all
+npm run package:windows:all
+npm run package:linux:all
+npm run package:macos:universal
+npm run package:android:all
 ```
 
 ## Build Notes
@@ -117,6 +125,7 @@ npm run tauri:desktop:build
 ```bash
 npm run tauri:android:init
 npm run tauri:android:build:apk
+npm run tauri:android:build:all
 ```
 
 If initialization fails with `Android NDK not found`, configure environment variables (Windows PowerShell):
@@ -156,7 +165,7 @@ npm run version
 npm run release
 ```
 
-The `v*` tag push triggers `.github/workflows/release.yml`, which builds desktop installers on Windows/macOS/Linux, Android APK/AAB, and an iOS bundle (best effort), then uploads artifacts to GitHub Release automatically.
+The `v*` tag push triggers `.github/workflows/release.yml`, which builds desktop installers for Windows (x64 + ARM64), Linux (x64 + ARM64, ARM64 best effort), macOS universal, Android APK/AAB (arm64/armv7/x86_64/x86), and an iOS bundle (best effort), then uploads artifacts to GitHub Release automatically.
 
 ## License
 

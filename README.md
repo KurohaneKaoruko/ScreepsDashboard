@@ -94,6 +94,14 @@ npm run tauri:android:init
 npm run tauri:android:dev
 npm run tauri:android:build:apk
 npm run tauri:android:build:aab
+npm run tauri:android:build:all
+
+# 多架构快捷打包
+npm run package:all
+npm run package:windows:all
+npm run package:linux:all
+npm run package:macos:universal
+npm run package:android:all
 ```
 
 ## 构建说明
@@ -117,6 +125,7 @@ npm run tauri:desktop:build
 ```bash
 npm run tauri:android:init
 npm run tauri:android:build:apk
+npm run tauri:android:build:all
 ```
 
 若初始化时报 `Android NDK not found`，请确认环境变量（Windows PowerShell）：
