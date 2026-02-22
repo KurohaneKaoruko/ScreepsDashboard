@@ -74,7 +74,8 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xdg-utils
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -139,7 +140,21 @@ jobs:
             echo "prerelease=$IS_PRERELEASE"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Build and publish installers (Windows prerelease: NSIS only)
+        if: ${{ contains(github.ref_name, '-') && startsWith(matrix.platform, 'windows') }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ steps.release_meta.outputs.release_name }}
+          releaseBody: ${{ steps.release_meta.outputs.release_body }}
+          prerelease: ${{ steps.release_meta.outputs.prerelease }}
+          releaseDraft: false
+          args: ${{ format('{0} --bundles nsis', matrix.args) }}
+
       - name: Build and publish installers
+        if: ${{ !(contains(github.ref_name, '-') && startsWith(matrix.platform, 'windows')) }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -153,6 +168,7 @@ jobs:
 
   publish-android:
     needs: publish-desktop
+    if: ${{ always() && needs.publish-desktop.result != 'cancelled' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -216,6 +232,7 @@ jobs:
 
   publish-ios:
     needs: publish-desktop
+    if: ${{ always() && needs.publish-desktop.result != 'cancelled' }}
     runs-on: macos-latest
     continue-on-error: true
     permissions:
