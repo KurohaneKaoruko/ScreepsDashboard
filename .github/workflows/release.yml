@@ -200,6 +200,36 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Derive Android signing defaults
+        id: android_signing_defaults
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_name="$(node -e "const fs=require('node:fs'); const cfg=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')); process.stdout.write((cfg.productName || 'ScreepsDashboard').trim());")"
+          if [ -z "$product_name" ]; then
+            product_name="ScreepsDashboard"
+          fi
+          name_hash="$(printf '%s' "$product_name" | sha256sum | awk '{print $1}')"
+          key_alias="sd${name_hash:0:14}"
+          store_password="${name_hash:0:24}"
+          key_password="${name_hash:24:24}"
+          echo "::add-mask::$store_password"
+          echo "::add-mask::$key_password"
+          {
+            echo "product_name=$product_name"
+            echo "name_hash=$name_hash"
+            echo "key_alias=$key_alias"
+            echo "store_password=$store_password"
+            echo "key_password=$key_password"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore generated Android keystore cache
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/screeps-dashboard/android-signing.jks
+          key: android-keystore-${{ github.repository }}-${{ steps.android_signing_defaults.outputs.name_hash }}
+
       - name: Build Android APK
         run: pnpm run package:target -- android-apk
 
@@ -213,6 +243,9 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          DEFAULT_ANDROID_KEY_ALIAS: ${{ steps.android_signing_defaults.outputs.key_alias }}
+          DEFAULT_ANDROID_KEYSTORE_PASSWORD: ${{ steps.android_signing_defaults.outputs.store_password }}
+          DEFAULT_ANDROID_KEY_PASSWORD: ${{ steps.android_signing_defaults.outputs.key_password }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -228,15 +261,21 @@ jobs:
             exit 1
           fi
 
+          keystore_cache_path="$HOME/.cache/screeps-dashboard/android-signing.jks"
           keystore_path="$RUNNER_TEMP/android-signing.jks"
-          key_alias="${ANDROID_KEY_ALIAS:-screepsdashboard}"
-          keystore_password="${ANDROID_KEYSTORE_PASSWORD:-android}"
-          key_password="${ANDROID_KEY_PASSWORD:-$keystore_password}"
+          key_alias="${ANDROID_KEY_ALIAS:-$DEFAULT_ANDROID_KEY_ALIAS}"
+          keystore_password="${ANDROID_KEYSTORE_PASSWORD:-$DEFAULT_ANDROID_KEYSTORE_PASSWORD}"
+          key_password="${ANDROID_KEY_PASSWORD:-$DEFAULT_ANDROID_KEY_PASSWORD}"
 
           if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
             echo "[android] Using configured keystore from secrets."
+          elif [ -f "$keystore_cache_path" ]; then
+            keystore_path="$keystore_cache_path"
+            echo "[android] Using cached signing keystore."
           else
+            mkdir -p "$(dirname "$keystore_cache_path")"
+            keystore_path="$keystore_cache_path"
             keytool -genkeypair -v \
               -keystore "$keystore_path" \
               -alias "$key_alias" \
@@ -246,7 +285,7 @@ jobs:
               -keysize 2048 \
               -validity 36500 \
               -dname "CN=Screeps Dashboard, OU=CI, O=Screeps, L=Unknown, ST=Unknown, C=US"
-            echo "[android] ANDROID_KEYSTORE_BASE64 not set; generated ephemeral CI signing key."
+            echo "[android] Generated signing keystore from product-name hash defaults."
           fi
 
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
