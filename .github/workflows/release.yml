@@ -1,5 +1,4 @@
 name: Release
-run-name: Release (${{ github.ref_type }}: ${{ github.ref_name }})
 
 on:
   push:
@@ -8,6 +7,7 @@ on:
 
 jobs:
   verify-version:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Log trigger context
@@ -38,6 +38,7 @@ jobs:
         run: node scripts/release/verify-tag-version.mjs ${{ github.ref_name }}
 
   publish_desktop:
+    if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - verify-version
     permissions:
@@ -162,6 +163,7 @@ jobs:
           args: ${{ matrix.args }}
 
   publish_android:
+    if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - publish_desktop
     runs-on: ubuntu-22.04
@@ -363,6 +365,7 @@ jobs:
             dist/android-aab/signed/*.aab
 
   publish_ios:
+    if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - publish_desktop
     runs-on: macos-latest
