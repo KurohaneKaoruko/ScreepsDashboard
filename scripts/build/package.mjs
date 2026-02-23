@@ -150,13 +150,13 @@ const ARTIFACT_RULES = {
   "android-apk": {
     roots: [resolve(projectRoot, "src-tauri", "gen", "android", "app", "build", "outputs", "apk")],
     suffixes: [".apk"],
-    mustInclude: ["/release/"],
+    mustInclude: ["release"],
     fallbackCount: 10,
   },
   "android-aab": {
     roots: [resolve(projectRoot, "src-tauri", "gen", "android", "app", "build", "outputs", "bundle")],
     suffixes: [".aab"],
-    mustInclude: ["/release/"],
+    mustInclude: ["release"],
     fallbackCount: 3,
   },
   ios: {
