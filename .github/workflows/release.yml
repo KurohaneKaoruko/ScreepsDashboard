@@ -185,7 +185,7 @@ jobs:
           args: ${{ matrix.args }}
 
   publish-android:
-    if: ${{ needs.guard.outputs.should_release == 'true' && always() && needs.publish-desktop.result != 'cancelled' }}
+    if: ${{ needs.guard.outputs.should_release == 'true' && always() && needs['publish-desktop'].result != 'cancelled' }}
     needs:
       - guard
       - publish-desktop
@@ -388,7 +388,7 @@ jobs:
             dist/android-aab/signed/*.aab
 
   publish-ios:
-    if: ${{ needs.guard.outputs.should_release == 'true' && always() && needs.publish-desktop.result != 'cancelled' }}
+    if: ${{ needs.guard.outputs.should_release == 'true' && always() && needs['publish-desktop'].result != 'cancelled' }}
     needs:
       - guard
       - publish-desktop
