@@ -3,8 +3,6 @@ run-name: Release (${{ github.ref_type }}: ${{ github.ref_name }})
 
 on:
   push:
-    branches-ignore:
-      - "**"
     tags:
       - "v*"
 
