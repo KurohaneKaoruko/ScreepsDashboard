@@ -1,6 +1,6 @@
 [package]
 name = "screeps-dashboard"
-version = "0.1.0-beta1"
+version = "0.1.0-beta2"
 description = "Screeps Dashboard - A desktop app for monitoring your Screeps game"
 authors = ["you"]
 edition = "2021"
