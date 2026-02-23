@@ -382,15 +382,39 @@ function runTargetBuild(targetKey, passthroughArgs, visiting = new Set()) {
   visiting.delete(targetKey);
 }
 
-const args = process.argv.slice(2);
-if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-  printUsage();
-  process.exit(args.length === 0 ? 1 : 0);
+function parseCliArgs(rawArgs) {
+  const args = [...rawArgs];
+  while (args[0] === "--") {
+    args.shift();
+  }
+
+  if (args.length === 0) {
+    return {
+      requestedTarget: "",
+      passthroughArgs: [],
+    };
+  }
+
+  return {
+    requestedTarget: args[0],
+    passthroughArgs: args.slice(1),
+  };
 }
 
-const requestedTarget = args[0].toLowerCase();
+const rawArgs = process.argv.slice(2);
+if (rawArgs.length === 0 || rawArgs.includes("--help") || rawArgs.includes("-h")) {
+  printUsage();
+  process.exit(rawArgs.length === 0 ? 1 : 0);
+}
+
+const { requestedTarget: rawTarget, passthroughArgs } = parseCliArgs(rawArgs);
+if (!rawTarget) {
+  printUsage();
+  fail("Missing target.");
+}
+
+const requestedTarget = rawTarget.toLowerCase();
 const targetKey = ALIASES[requestedTarget] ?? requestedTarget;
-const passthroughArgs = args.slice(1);
 
 if (!TARGETS[targetKey]) {
   printUsage();
