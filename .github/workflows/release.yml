@@ -3,12 +3,34 @@ run-name: Release (${{ github.ref_type }}: ${{ github.ref_name }})
 
 on:
   push:
+    branches-ignore:
+      - "**"
     tags:
       - "v*"
 
 jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "event=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "ref_type=${{ github.ref_type }}"
+          echo "ref_name=${{ github.ref_name }}"
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
   verify-version:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ needs.guard.outputs.should_release == 'true' }}
+    needs: guard
     runs-on: ubuntu-latest
     steps:
       - name: Log trigger context
@@ -39,8 +61,10 @@ jobs:
         run: node scripts/release/verify-tag-version.mjs ${{ github.ref_name }}
 
   publish-desktop:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: verify-version
+    if: ${{ needs.guard.outputs.should_release == 'true' }}
+    needs:
+      - guard
+      - verify-version
     permissions:
       contents: write
     strategy:
@@ -163,8 +187,10 @@ jobs:
           args: ${{ matrix.args }}
 
   publish-android:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && always() && needs.publish-desktop.result != 'cancelled' }}
-    needs: publish-desktop
+    if: ${{ needs.guard.outputs.should_release == 'true' && always() && needs.publish-desktop.result != 'cancelled' }}
+    needs:
+      - guard
+      - publish-desktop
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -364,8 +390,10 @@ jobs:
             dist/android-aab/signed/*.aab
 
   publish-ios:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && always() && needs.publish-desktop.result != 'cancelled' }}
-    needs: publish-desktop
+    if: ${{ needs.guard.outputs.should_release == 'true' && always() && needs.publish-desktop.result != 'cancelled' }}
+    needs:
+      - guard
+      - publish-desktop
     runs-on: macos-latest
     continue-on-error: true
     permissions:
