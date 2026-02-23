@@ -4,15 +4,17 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
 } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(scriptDir, "..", "..");
+const tauriConfigPath = resolve(projectRoot, "src-tauri", "tauri.conf.json");
 const tauriCliPath = resolve(
   projectRoot,
   "node_modules",
@@ -27,6 +29,7 @@ const MACOS_UNIVERSAL_TRIPLE = "universal-apple-darwin";
 const LINUX_AMD64_TRIPLE = "x86_64-unknown-linux-gnu";
 const LINUX_ARM64_TRIPLE = "aarch64-unknown-linux-gnu";
 const ANDROID_ABI_TARGETS = ["aarch64", "armv7", "x86_64", "i686"];
+let packageIdentityCache = null;
 
 const TARGETS = {
   "windows-amd64": {
@@ -284,6 +287,83 @@ function findArtifacts(targetKey, buildStartedAtMs) {
   });
 }
 
+function slugifyFilePart(value, fallback = "app") {
+  const raw = String(value ?? "").trim();
+  const normalized = raw
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || fallback;
+}
+
+function loadPackageIdentity() {
+  if (packageIdentityCache) {
+    return packageIdentityCache;
+  }
+
+  const fallback = {
+    productSlug: "app",
+    versionSlug: "0.0.0",
+  };
+
+  if (!existsSync(tauriConfigPath)) {
+    packageIdentityCache = fallback;
+    return packageIdentityCache;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(tauriConfigPath, "utf8"));
+    packageIdentityCache = {
+      productSlug: slugifyFilePart(parsed.productName, fallback.productSlug),
+      versionSlug: slugifyFilePart(parsed.version, fallback.versionSlug),
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[package] Failed to parse ${tauriConfigPath}: ${reason}`);
+    packageIdentityCache = fallback;
+  }
+
+  return packageIdentityCache;
+}
+
+function makeUniqueName(name, usedNames) {
+  if (!usedNames.has(name)) {
+    usedNames.add(name);
+    return name;
+  }
+
+  const extension = extname(name);
+  const stem = extension ? name.slice(0, -extension.length) : name;
+  let index = 2;
+  while (true) {
+    const candidate = `${stem}-${index}${extension}`;
+    if (!usedNames.has(candidate)) {
+      usedNames.add(candidate);
+      return candidate;
+    }
+    index += 1;
+  }
+}
+
+function getArtifactDestinationName(targetKey, artifactPath, usedNames) {
+  const sourceName = basename(artifactPath);
+  if (targetKey !== "android-apk" && targetKey !== "android-aab") {
+    return makeUniqueName(sourceName, usedNames);
+  }
+
+  const extension = extname(sourceName).toLowerCase();
+  if (extension !== ".apk" && extension !== ".aab") {
+    return makeUniqueName(sourceName, usedNames);
+  }
+
+  const { productSlug, versionSlug } = loadPackageIdentity();
+  const sourceStem = basename(sourceName, extension);
+  const variant = slugifyFilePart(sourceStem.replace(/^app-/i, ""), targetKey);
+  const packageKind = targetKey === "android-apk" ? "android-apk" : "android-aab";
+  const renamed = `${productSlug}-${versionSlug}-${packageKind}-${variant}${extension}`;
+  return makeUniqueName(renamed, usedNames);
+}
+
 function copyArtifactsToDist(targetKey, label, buildStartedAtMs) {
   const artifacts = findArtifacts(targetKey, buildStartedAtMs);
   if (artifacts.length === 0) {
@@ -294,20 +374,40 @@ function copyArtifactsToDist(targetKey, label, buildStartedAtMs) {
   const targetDistDir = resolve(distRoot, targetKey);
   rmSync(targetDistDir, { recursive: true, force: true });
   mkdirSync(targetDistDir, { recursive: true });
+  const usedNames = new Set();
+  const copiedArtifacts = [];
 
   for (const artifact of artifacts) {
-    const destinationPath = resolve(targetDistDir, basename(artifact.artifactPath));
+    const destinationName = getArtifactDestinationName(targetKey, artifact.artifactPath, usedNames);
+    const destinationPath = resolve(targetDistDir, destinationName);
     rmSync(destinationPath, { recursive: true, force: true });
     if (artifact.isDirectory) {
       cpSync(artifact.artifactPath, destinationPath, { recursive: true, force: true });
     } else {
       copyFileSync(artifact.artifactPath, destinationPath);
     }
+    copiedArtifacts.push({
+      sourcePath: artifact.artifactPath,
+      destinationPath,
+      isDirectory: artifact.isDirectory,
+    });
   }
 
   console.log(`[package:${label}] Copied ${artifacts.length} artifact(s) to ${targetDistDir}`);
-  for (const artifact of artifacts) {
-    console.log(`  - ${artifact.artifactPath}`);
+  for (const copied of copiedArtifacts) {
+    console.log(`  - ${copied.sourcePath} -> ${copied.destinationPath}`);
+  }
+
+  if (targetKey === "android-apk") {
+    const unsignedApks = copiedArtifacts.filter((copied) => {
+      const normalized = copied.destinationPath.replace(/\\/g, "/").toLowerCase();
+      return !copied.isDirectory && normalized.endsWith(".apk") && normalized.includes("-unsigned.");
+    });
+    if (unsignedApks.length > 0) {
+      console.warn(
+        `[package:${label}] ${unsignedApks.length} APK artifact(s) appear unsigned. Sign them before installation/distribution.`,
+      );
+    }
   }
 }
 

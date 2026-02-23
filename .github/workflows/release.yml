@@ -206,6 +206,104 @@ jobs:
       - name: Build Android AAB
         run: pnpm run package:target -- android-aab
 
+      - name: Sign Android artifacts
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          apk_inputs=(dist/android-apk/*.apk)
+          aab_inputs=(dist/android-aab/*.aab)
+          if [ ${#apk_inputs[@]} -eq 0 ]; then
+            echo "[android] No APK artifacts found in dist/android-apk"
+            exit 1
+          fi
+          if [ ${#aab_inputs[@]} -eq 0 ]; then
+            echo "[android] No AAB artifacts found in dist/android-aab"
+            exit 1
+          fi
+
+          keystore_path="$RUNNER_TEMP/android-signing.jks"
+          key_alias="${ANDROID_KEY_ALIAS:-screepsdashboard}"
+          keystore_password="${ANDROID_KEYSTORE_PASSWORD:-android}"
+          key_password="${ANDROID_KEY_PASSWORD:-$keystore_password}"
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+            echo "[android] Using configured keystore from secrets."
+          else
+            keytool -genkeypair -v \
+              -keystore "$keystore_path" \
+              -alias "$key_alias" \
+              -storepass "$keystore_password" \
+              -keypass "$key_password" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 36500 \
+              -dname "CN=Screeps Dashboard, OU=CI, O=Screeps, L=Unknown, ST=Unknown, C=US"
+            echo "[android] ANDROID_KEYSTORE_BASE64 not set; generated ephemeral CI signing key."
+          fi
+
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          if [ -z "$build_tools" ]; then
+            echo "[android] No Android build-tools directory found under $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          zipalign="$build_tools/zipalign"
+          apksigner="$build_tools/apksigner"
+          if [ ! -x "$zipalign" ]; then
+            zipalign="$(command -v zipalign || true)"
+          fi
+          if [ ! -x "$apksigner" ]; then
+            apksigner="$(command -v apksigner || true)"
+          fi
+          if [ -z "$zipalign" ] || [ -z "$apksigner" ]; then
+            echo "[android] zipalign/apksigner not found"
+            exit 1
+          fi
+
+          mkdir -p dist/android-apk/signed dist/android-aab/signed
+
+          for apk in "${apk_inputs[@]}"; do
+            base="$(basename "$apk" .apk)"
+            aligned="$RUNNER_TEMP/${base}.aligned.apk"
+            signed_name="${base/-unsigned/}.apk"
+            signed_path="dist/android-apk/signed/${signed_name}"
+            "$zipalign" -f -p 4 "$apk" "$aligned"
+            "$apksigner" sign \
+              --ks "$keystore_path" \
+              --ks-key-alias "$key_alias" \
+              --ks-pass "pass:${keystore_password}" \
+              --key-pass "pass:${key_password}" \
+              --out "$signed_path" \
+              "$aligned"
+            "$apksigner" verify --print-certs "$signed_path" > /dev/null
+            rm -f "$aligned"
+            echo "[android] Signed APK: $signed_path"
+          done
+
+          for aab in "${aab_inputs[@]}"; do
+            base="$(basename "$aab" .aab)"
+            signed_name="${base/-unsigned/}.aab"
+            signed_path="dist/android-aab/signed/${signed_name}"
+            jarsigner \
+              -sigalg SHA256withRSA \
+              -digestalg SHA-256 \
+              -keystore "$keystore_path" \
+              -storepass "$keystore_password" \
+              -keypass "$key_password" \
+              -signedjar "$signed_path" \
+              "$aab" \
+              "$key_alias"
+            jarsigner -verify "$signed_path" > /dev/null
+            echo "[android] Signed AAB: $signed_path"
+          done
+
       - name: Upload Android artifacts to release
         uses: softprops/action-gh-release@v2
         env:
@@ -213,8 +311,8 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            dist/android-apk/*.apk
-            dist/android-aab/*.aab
+            dist/android-apk/signed/*.apk
+            dist/android-aab/signed/*.aab
 
   publish-ios:
     needs: publish-desktop
@@ -270,10 +368,43 @@ jobs:
           shopt -s nullglob
           for item in dist/ios/*; do
             base="$(basename "$item")"
+            if [ -f "$item" ]; then
+              cp "$item" "dist/ios-upload/${base}"
+              continue
+            fi
+
+            if [ -d "$item" ] && [[ "$base" == *.app ]]; then
+              app_name="${base%.app}"
+              tmp_dir="$(mktemp -d)"
+              mkdir -p "$tmp_dir/Payload"
+              cp -R "$item" "$tmp_dir/Payload/"
+              (
+                cd "$tmp_dir"
+                zip -qry "$GITHUB_WORKSPACE/dist/ios-upload/${app_name}.ipa" Payload
+              )
+              rm -rf "$tmp_dir"
+              continue
+            fi
+
+            if [ -d "$item" ] && [[ "$base" == *.xcarchive ]]; then
+              archive_name="${base%.xcarchive}"
+              app_candidates=("$item"/Products/Applications/*.app)
+              if [ ${#app_candidates[@]} -gt 0 ] && [ -d "${app_candidates[0]}" ]; then
+                tmp_dir="$(mktemp -d)"
+                mkdir -p "$tmp_dir/Payload"
+                cp -R "${app_candidates[0]}" "$tmp_dir/Payload/"
+                (
+                  cd "$tmp_dir"
+                  zip -qry "$GITHUB_WORKSPACE/dist/ios-upload/${archive_name}.ipa" Payload
+                )
+                rm -rf "$tmp_dir"
+              fi
+              ditto -c -k --sequesterRsrc --keepParent "$item" "dist/ios-upload/${base}.zip"
+              continue
+            fi
+
             if [ -d "$item" ]; then
               ditto -c -k --sequesterRsrc --keepParent "$item" "dist/ios-upload/${base}.zip"
-            else
-              cp "$item" "dist/ios-upload/${base}"
             fi
           done
           if compgen -G "dist/ios-upload/*" > /dev/null; then
