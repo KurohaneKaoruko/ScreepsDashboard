@@ -1,7 +1,7 @@
 {
   "name": "screeps-dashboard",
   "private": true,
-  "version": "0.1.0-alpha6",
+  "version": "0.1.0-alpha7",
   "type": "module",
   "scripts": {
     "dev": "cd src-next && next dev",
