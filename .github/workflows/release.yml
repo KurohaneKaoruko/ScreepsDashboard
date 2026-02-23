@@ -234,11 +234,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore generated Android keystore cache
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
         uses: actions/cache@v4
+        continue-on-error: true
         with:
           path: ~/.cache/screeps-dashboard/android-signing.jks
-          key: android-keystore-${{ github.repository }}-${{ steps.android_signing_defaults.outputs.name_hash }}
+          key: android-keystore-${{ github.repository_id }}-${{ steps.android_signing_defaults.outputs.name_hash }}
 
       - name: Build Android APK
         run: pnpm run package:target -- android-apk
