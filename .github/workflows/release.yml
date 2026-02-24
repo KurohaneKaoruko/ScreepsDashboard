@@ -223,7 +223,7 @@ jobs:
           name_hash="$(printf '%s' "$product_name" | sha256sum | awk '{print $1}')"
           key_alias="sd${name_hash:0:14}"
           store_password="${name_hash:0:24}"
-          key_password="${name_hash:24:24}"
+          key_password="$store_password"
           echo "::add-mask::$store_password"
           echo "::add-mask::$key_password"
           {
@@ -231,7 +231,6 @@ jobs:
             echo "name_hash=$name_hash"
             echo "key_alias=$key_alias"
             echo "store_password=$store_password"
-            echo "key_password=$key_password"
           } >> "$GITHUB_OUTPUT"
 
       - name: Restore generated Android keystore cache
@@ -256,7 +255,6 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           DEFAULT_ANDROID_KEY_ALIAS: ${{ steps.android_signing_defaults.outputs.key_alias }}
           DEFAULT_ANDROID_KEYSTORE_PASSWORD: ${{ steps.android_signing_defaults.outputs.store_password }}
-          DEFAULT_ANDROID_KEY_PASSWORD: ${{ steps.android_signing_defaults.outputs.key_password }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -276,7 +274,10 @@ jobs:
           keystore_path="$RUNNER_TEMP/android-signing.jks"
           key_alias="${ANDROID_KEY_ALIAS:-$DEFAULT_ANDROID_KEY_ALIAS}"
           keystore_password="${ANDROID_KEYSTORE_PASSWORD:-$DEFAULT_ANDROID_KEYSTORE_PASSWORD}"
-          key_password="${ANDROID_KEY_PASSWORD:-$DEFAULT_ANDROID_KEY_PASSWORD}"
+          key_password="${ANDROID_KEY_PASSWORD:-}"
+          if [ -z "$key_password" ]; then
+            key_password="$keystore_password"
+          fi
 
           if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
