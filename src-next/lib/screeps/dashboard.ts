@@ -305,6 +305,23 @@ function asNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function toNumericRecord(value: unknown): Record<string, number> | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const output: Record<string, number> = {};
+  for (const [key, rawValue] of Object.entries(record)) {
+    const parsed = asNumber(rawValue);
+    if (parsed !== undefined) {
+      output[key] = parsed;
+    }
+  }
+
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
 function asString(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim().length > 0) {
     return value.trim();
@@ -599,6 +616,8 @@ function parseRoomObjectsForThumbnail(roomName: string, payload: unknown): RoomO
     const ownerRecord = asRecord(record.owner);
     const id =
       firstString([record._id, record.id]) ?? `${type}:${x}:${y}:${summaries.size + 1}`;
+    const store = toNumericRecord(record.store);
+    const energy = firstNumber([record.energy, store?.energy]);
     const objectSummary: RoomObjectSummary = {
       id,
       type,
@@ -616,7 +635,8 @@ function parseRoomObjectsForThumbnail(roomName: string, payload: unknown): RoomO
       ttl: firstNumber([record.ticksToLive, record.ttl]),
       user: firstString([record.user, ownerRecord?.user, record.userId]),
       userId: firstString([record.userId, record.user, ownerRecord?.user]),
-      energy: firstNumber([record.energy]),
+      store: store ?? (energy !== undefined && energy > 0 ? { energy } : undefined),
+      energy,
       energyCapacity: firstNumber([record.energyCapacity]),
       level: asNumber(record.level),
       progress: firstNumber([record.progress]),

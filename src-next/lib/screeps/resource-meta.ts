@@ -211,6 +211,9 @@ const GROUP_ORDER: readonly MarketResourceGroupKey[] = [
   "other",
 ];
 
+export const MARKET_RESOURCE_GROUP_ORDER: readonly MarketResourceGroupKey[] = GROUP_ORDER;
+export const RESOURCE_THUMB_BASE_PATH = "/screeps-resource-thumbs";
+
 const LOWERCASE_ICON_RESOURCES = new Set<string>(
   KNOWN_MARKET_RESOURCES.filter((resourceType) => resourceType.toLowerCase() === resourceType)
 );
@@ -375,6 +378,11 @@ export function getResourceMeta(resourceType: string): ResourceMeta {
     iconUrl: officialIconUrl ?? `${ICON_BASE_URL}/${encodeURIComponent(resolvedIconFileName)}.png`,
     iconScale: officialAsset?.iconScale,
   };
+}
+
+export function getResourceThumbnailUrl(resourceType: string): string {
+  const meta = getResourceMeta(resourceType);
+  return `${RESOURCE_THUMB_BASE_PATH}/${encodeURIComponent(meta.iconFileName)}.png`;
 }
 
 export function groupMarketResources(resourceTypes: readonly string[]): MarketResourceGroup[] {

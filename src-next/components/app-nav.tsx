@@ -12,6 +12,7 @@ interface NavItem {
   icon:
     | "user"
     | "rooms"
+    | "resources"
     | "map"
     | "market"
     | "mail"
@@ -45,6 +46,15 @@ function NavIcon({ icon }: { icon: NavItem["icon"] }) {
           <rect x="9" y="2.2" width="4.8" height="4.8" fill="none" />
           <rect x="2.2" y="9" width="4.8" height="4.8" fill="none" />
           <rect x="9" y="9" width="4.8" height="4.8" fill="none" />
+        </svg>
+      );
+    case "resources":
+      return (
+        <svg className="nav-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <ellipse cx="8" cy="3.4" rx="4.7" ry="1.7" fill="none" />
+          <path d="M3.3 3.4v3.2c0 .9 2.1 1.7 4.7 1.7s4.7-.8 4.7-1.7V3.4" />
+          <path d="M3.3 6.6v3.2c0 .9 2.1 1.7 4.7 1.7s4.7-.8 4.7-1.7V6.6" />
+          <path d="M3.3 9.8V13c0 .9 2.1 1.7 4.7 1.7s4.7-.8 4.7-1.7V9.8" />
         </svg>
       );
     case "map":
@@ -114,6 +124,7 @@ export function AppNav({ onNavigate }: AppNavProps) {
   const pathname = usePathname();
   const session = useAuthStore((state) => state.session);
   const { t, locale } = useI18n();
+  const resourcesLabel = t("nav.resourcesLabel");
   const mapLabel = locale === "zh-CN" ? "\u5730\u56fe" : "Map";
   const marketLabel = locale === "zh-CN" ? "\u5546\u5e97" : "Market";
   const mailLabel = locale === "zh-CN" ? "\u6d88\u606f" : "Messages";
@@ -131,6 +142,12 @@ export function AppNav({ onNavigate }: AppNavProps) {
           label: t("nav.roomsLabel"),
           meta: "/rooms",
           icon: "rooms",
+        },
+        {
+          href: "/resources",
+          label: resourcesLabel,
+          meta: "/resources",
+          icon: "resources",
         },
         {
           href: "/map",
