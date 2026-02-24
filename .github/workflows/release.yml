@@ -7,24 +7,40 @@ on:
 
 jobs:
   verify-version:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - name: Log trigger context
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "ref_type=${{ github.ref_type }}"
+          echo "ref_name=${{ github.ref_name }}"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Verify tag and project version match
-        run: npm run version:verify-tag -- ${{ github.ref_name }}
+        run: node scripts/release/verify-tag-version.mjs ${{ github.ref_name }}
 
-  publish-desktop:
-    needs: verify-version
+  publish_desktop:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - verify-version
     permissions:
       contents: write
     strategy:
@@ -38,10 +54,10 @@ jobs:
             args: "--target aarch64-unknown-linux-gnu"
             allow_failure: true
           - platform: windows-latest
-            args: "--target x86_64-pc-windows-msvc"
+            args: "--target x86_64-pc-windows-msvc --bundles nsis"
             allow_failure: false
           - platform: windows-latest
-            args: "--target aarch64-pc-windows-msvc"
+            args: "--target aarch64-pc-windows-msvc --bundles nsis"
             allow_failure: false
           - platform: macos-latest
             args: "--target universal-apple-darwin"
@@ -54,6 +70,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Install Linux system dependencies
         if: startsWith(matrix.platform, 'ubuntu-')
         run: |
@@ -63,19 +84,21 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            xdg-utils
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Add Rust target for Windows ARM64
-        if: matrix.args == '--target aarch64-pc-windows-msvc'
+        if: startsWith(matrix.args, '--target aarch64-pc-windows-msvc')
         run: rustup target add aarch64-pc-windows-msvc
 
       - name: Add Rust targets for macOS universal
@@ -83,7 +106,7 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Resolve release metadata
         id: release_meta
@@ -139,8 +162,10 @@ jobs:
           releaseDraft: false
           args: ${{ matrix.args }}
 
-  publish-android:
-    needs: publish-desktop
+  publish_android:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - publish_desktop
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -150,11 +175,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -178,13 +209,151 @@ jobs:
           echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Derive Android signing defaults
+        id: android_signing_defaults
+        shell: bash
+        run: |
+          set -euo pipefail
+          product_name="$(node -e "const fs=require('node:fs'); const cfg=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')); process.stdout.write((cfg.productName || 'ScreepsDashboard').trim());")"
+          if [ -z "$product_name" ]; then
+            product_name="ScreepsDashboard"
+          fi
+          name_hash="$(printf '%s' "$product_name" | sha256sum | awk '{print $1}')"
+          key_alias="sd${name_hash:0:14}"
+          store_password="${name_hash:0:24}"
+          key_password="$store_password"
+          echo "::add-mask::$store_password"
+          echo "::add-mask::$key_password"
+          {
+            echo "product_name=$product_name"
+            echo "name_hash=$name_hash"
+            echo "key_alias=$key_alias"
+            echo "store_password=$store_password"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore generated Android keystore cache
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: ~/.cache/screeps-dashboard/android-signing.jks
+          key: android-keystore-${{ github.repository_id }}-${{ steps.android_signing_defaults.outputs.name_hash }}
 
       - name: Build Android APK
-        run: npm run package:target -- android-apk
+        run: pnpm run package:target -- android-apk
 
       - name: Build Android AAB
-        run: npm run package:target -- android-aab
+        run: pnpm run package:target -- android-aab
+
+      - name: Sign Android artifacts
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          DEFAULT_ANDROID_KEY_ALIAS: ${{ steps.android_signing_defaults.outputs.key_alias }}
+          DEFAULT_ANDROID_KEYSTORE_PASSWORD: ${{ steps.android_signing_defaults.outputs.store_password }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          apk_inputs=(dist/android-apk/*.apk)
+          aab_inputs=(dist/android-aab/*.aab)
+          if [ ${#apk_inputs[@]} -eq 0 ]; then
+            echo "[android] No APK artifacts found in dist/android-apk"
+            exit 1
+          fi
+          if [ ${#aab_inputs[@]} -eq 0 ]; then
+            echo "[android] No AAB artifacts found in dist/android-aab"
+            exit 1
+          fi
+
+          keystore_cache_path="$HOME/.cache/screeps-dashboard/android-signing.jks"
+          keystore_path="$RUNNER_TEMP/android-signing.jks"
+          key_alias="${ANDROID_KEY_ALIAS:-$DEFAULT_ANDROID_KEY_ALIAS}"
+          keystore_password="${ANDROID_KEYSTORE_PASSWORD:-$DEFAULT_ANDROID_KEYSTORE_PASSWORD}"
+          key_password="${ANDROID_KEY_PASSWORD:-}"
+          if [ -z "$key_password" ]; then
+            key_password="$keystore_password"
+          fi
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+            echo "[android] Using configured keystore from secrets."
+          elif [ -f "$keystore_cache_path" ]; then
+            keystore_path="$keystore_cache_path"
+            echo "[android] Using cached signing keystore."
+          else
+            mkdir -p "$(dirname "$keystore_cache_path")"
+            keystore_path="$keystore_cache_path"
+            keytool -genkeypair -v \
+              -keystore "$keystore_path" \
+              -alias "$key_alias" \
+              -storepass "$keystore_password" \
+              -keypass "$key_password" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 36500 \
+              -dname "CN=Screeps Dashboard, OU=CI, O=Screeps, L=Unknown, ST=Unknown, C=US"
+            echo "[android] Generated signing keystore from product-name hash defaults."
+          fi
+
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          if [ -z "$build_tools" ]; then
+            echo "[android] No Android build-tools directory found under $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          zipalign="$build_tools/zipalign"
+          apksigner="$build_tools/apksigner"
+          if [ ! -x "$zipalign" ]; then
+            zipalign="$(command -v zipalign || true)"
+          fi
+          if [ ! -x "$apksigner" ]; then
+            apksigner="$(command -v apksigner || true)"
+          fi
+          if [ -z "$zipalign" ] || [ -z "$apksigner" ]; then
+            echo "[android] zipalign/apksigner not found"
+            exit 1
+          fi
+
+          mkdir -p dist/android-apk/signed dist/android-aab/signed
+
+          for apk in "${apk_inputs[@]}"; do
+            base="$(basename "$apk" .apk)"
+            aligned="$RUNNER_TEMP/${base}.aligned.apk"
+            signed_name="${base/-unsigned/}.apk"
+            signed_path="dist/android-apk/signed/${signed_name}"
+            "$zipalign" -f -p 4 "$apk" "$aligned"
+            "$apksigner" sign \
+              --ks "$keystore_path" \
+              --ks-key-alias "$key_alias" \
+              --ks-pass "pass:${keystore_password}" \
+              --key-pass "pass:${key_password}" \
+              --out "$signed_path" \
+              "$aligned"
+            "$apksigner" verify --print-certs "$signed_path" > /dev/null
+            rm -f "$aligned"
+            echo "[android] Signed APK: $signed_path"
+          done
+
+          for aab in "${aab_inputs[@]}"; do
+            base="$(basename "$aab" .aab)"
+            signed_name="${base/-unsigned/}.aab"
+            signed_path="dist/android-aab/signed/${signed_name}"
+            jarsigner \
+              -sigalg SHA256withRSA \
+              -digestalg SHA-256 \
+              -keystore "$keystore_path" \
+              -storepass "$keystore_password" \
+              -keypass "$key_password" \
+              -signedjar "$signed_path" \
+              "$aab" \
+              "$key_alias"
+            jarsigner -verify "$signed_path" > /dev/null
+            echo "[android] Signed AAB: $signed_path"
+          done
 
       - name: Upload Android artifacts to release
         uses: softprops/action-gh-release@v2
@@ -193,11 +362,13 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            dist/android-apk/*.apk
-            dist/android-aab/*.aab
+            dist/android-apk/signed/*.apk
+            dist/android-aab/signed/*.aab
 
-  publish-ios:
-    needs: publish-desktop
+  publish_ios:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - publish_desktop
     runs-on: macos-latest
     continue-on-error: true
     permissions:
@@ -206,11 +377,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -219,19 +396,19 @@ jobs:
         run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Initialize iOS project (best effort)
         continue-on-error: true
         shell: bash
         run: |
           if [ ! -d "src-tauri/gen/apple" ]; then
-            npm run tauri -- ios init
+            pnpm run tauri -- ios init
           fi
 
       - name: Build iOS bundle (best effort)
         continue-on-error: true
-        run: npm run package:target -- ios
+        run: pnpm run package:target -- ios
 
       - name: Prepare iOS artifacts
         id: ios_assets
@@ -243,10 +420,43 @@ jobs:
           shopt -s nullglob
           for item in dist/ios/*; do
             base="$(basename "$item")"
+            if [ -f "$item" ]; then
+              cp "$item" "dist/ios-upload/${base}"
+              continue
+            fi
+
+            if [ -d "$item" ] && [[ "$base" == *.app ]]; then
+              app_name="${base%.app}"
+              tmp_dir="$(mktemp -d)"
+              mkdir -p "$tmp_dir/Payload"
+              cp -R "$item" "$tmp_dir/Payload/"
+              (
+                cd "$tmp_dir"
+                zip -qry "$GITHUB_WORKSPACE/dist/ios-upload/${app_name}.ipa" Payload
+              )
+              rm -rf "$tmp_dir"
+              continue
+            fi
+
+            if [ -d "$item" ] && [[ "$base" == *.xcarchive ]]; then
+              archive_name="${base%.xcarchive}"
+              app_candidates=("$item"/Products/Applications/*.app)
+              if [ ${#app_candidates[@]} -gt 0 ] && [ -d "${app_candidates[0]}" ]; then
+                tmp_dir="$(mktemp -d)"
+                mkdir -p "$tmp_dir/Payload"
+                cp -R "${app_candidates[0]}" "$tmp_dir/Payload/"
+                (
+                  cd "$tmp_dir"
+                  zip -qry "$GITHUB_WORKSPACE/dist/ios-upload/${archive_name}.ipa" Payload
+                )
+                rm -rf "$tmp_dir"
+              fi
+              ditto -c -k --sequesterRsrc --keepParent "$item" "dist/ios-upload/${base}.zip"
+              continue
+            fi
+
             if [ -d "$item" ]; then
               ditto -c -k --sequesterRsrc --keepParent "$item" "dist/ios-upload/${base}.zip"
-            else
-              cp "$item" "dist/ios-upload/${base}"
             fi
           done
           if compgen -G "dist/ios-upload/*" > /dev/null; then

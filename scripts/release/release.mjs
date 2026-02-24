@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import {
@@ -215,6 +216,21 @@ function ensureTagDoesNotExist(tag) {
   }
 }
 
+function ensureRemoteTagDoesNotExist(tag) {
+  const result = spawnSync(
+    "git",
+    ["ls-remote", "--exit-code", "--tags", "origin", `refs/tags/${tag}`],
+    {
+      cwd: projectRoot,
+      stdio: "ignore",
+    },
+  );
+
+  if (result.status === 0) {
+    throw new Error(`Tag already exists on origin: ${tag}. Use a new version/tag.`);
+  }
+}
+
 function createAnnotatedTag(tag, title, body) {
   const args = ["tag", "-a", tag, "-m", title];
   if (body.trim()) {
@@ -226,6 +242,19 @@ function createAnnotatedTag(tag, title, body) {
 function readBodyFromFile(filePath) {
   const content = readFileSync(filePath, "utf8");
   return content.replace(/\r\n/g, "\n").trimEnd();
+}
+
+function getReleaseCommitFiles() {
+  const files = ["package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"];
+
+  if (existsSync(resolve(projectRoot, "src-tauri", "Cargo.lock"))) {
+    files.push("src-tauri/Cargo.lock");
+  }
+  if (existsSync(resolve(projectRoot, "Cargo.lock"))) {
+    files.push("Cargo.lock");
+  }
+
+  return files;
 }
 
 async function askVersion(defaultVersion) {
@@ -334,6 +363,7 @@ async function main() {
   const releaseBody = String(releaseBodyRaw ?? "").replace(/\r\n/g, "\n").trimEnd();
 
   ensureTagDoesNotExist(tag);
+  ensureRemoteTagDoesNotExist(tag);
 
   if (!options.yes) {
     await askConfirmation(nextVersion, options.noPush);
@@ -363,7 +393,7 @@ async function main() {
   }
 
   if (anyVersionFileChanged) {
-    run("git", ["add", "package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"]);
+    run("git", ["add", ...getReleaseCommitFiles()]);
     run("git", ["commit", "-m", `release: ${tag}`]);
   }
   createAnnotatedTag(tag, releaseTitle, releaseBody);
