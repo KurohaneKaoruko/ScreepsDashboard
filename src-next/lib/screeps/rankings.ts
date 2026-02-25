@@ -92,10 +92,13 @@ function extractSeasons(payload: unknown): string[] {
   const records: Record<string, unknown>[] = [];
   flattenRecords(payload, 0, records);
 
+  // 匹配赛季格式 (YYYY) 或月度格式 (YYYY-MM)
+  const seasonPattern = /^\d{4}(-\d{2})?/;
+
   for (const record of records) {
     for (const value of Object.values(record)) {
       const season = asString(value);
-      if (season && /^\d{4}/.test(season)) {
+      if (season && seasonPattern.test(season)) {
         seasons.add(season);
       }
     }
@@ -103,7 +106,7 @@ function extractSeasons(payload: unknown): string[] {
 
   for (const entry of asArray(payload)) {
     const season = asString(entry);
-    if (season) {
+    if (season && seasonPattern.test(season)) {
       seasons.add(season);
     }
   }
@@ -190,7 +193,29 @@ async function fetchLeaderboardPayload(
   season?: string
 ): Promise<ScreepsResponse | undefined> {
   const offset = Math.max(0, (page - 1) * pageSize);
-  const modeValue = mode === "global" ? "world" : "season";
+
+  // 根据模式确定 API 参数
+  let modeValue: string;
+  let useSeasonParam = false;
+
+  switch (mode) {
+    case "global":
+      modeValue = "world";
+      break;
+    case "season":
+      modeValue = "season";
+      useSeasonParam = true;
+      break;
+    case "monthly":
+      modeValue = "monthly";
+      useSeasonParam = true;
+      break;
+    case "power":
+      modeValue = "power";
+      break;
+    default:
+      modeValue = "world";
+  }
 
   const candidates: ScreepsRequest[] = [
     {
@@ -201,11 +226,12 @@ async function fetchLeaderboardPayload(
         mode: modeValue,
         limit: pageSize,
         offset,
-        ...(season ? { season } : {}),
+        ...(useSeasonParam && season ? { season } : {}),
       },
     },
   ];
 
+  // season 模式额外获取 world 数据
   if (mode === "season") {
     candidates.push({
       baseUrl,

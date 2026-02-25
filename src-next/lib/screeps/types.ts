@@ -333,7 +333,7 @@ export interface MarketResourceSnapshot {
   resourceOrders: MarketResourceOrders;
 }
 
-export type RankingMode = "global" | "season";
+export type RankingMode = "global" | "season" | "monthly" | "power";
 
 export interface RankingEntry {
   username: string;

@@ -213,10 +213,12 @@ export function RankingsPanel() {
           >
             <option value="global">{t("rankings.global")}</option>
             <option value="season">{t("rankings.season")}</option>
+            <option value="monthly">{t("rankings.monthly")}</option>
+            <option value="power">{t("rankings.power")}</option>
           </select>
         </label>
 
-        {mode === "season" ? (
+        {(mode === "season" || mode === "monthly") ? (
           <label className="field compact-field">
             <span>{t("rankings.season")}</span>
             <select
