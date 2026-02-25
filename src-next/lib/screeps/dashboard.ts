@@ -54,6 +54,10 @@ interface DashboardFallbackEndpoint {
   body?: unknown;
 }
 
+export interface DashboardSnapshotOptions {
+  targetUsername?: string;
+}
+
 const STATS_FALLBACK_ENDPOINTS: DashboardFallbackEndpoint[] = [
   {
     endpoint: "/api/user/stats",
@@ -77,6 +81,159 @@ const PROFILE_FALLBACK_ENDPOINTS: DashboardFallbackEndpoint[] = [
   { endpoint: "/api/user/me", method: "GET" },
   { endpoint: "/api/auth/me", method: "GET" },
 ];
+
+function normalizeUsernameCandidate(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function dedupeFallbackEndpoints(
+  endpoints: DashboardFallbackEndpoint[]
+): DashboardFallbackEndpoint[] {
+  const output: DashboardFallbackEndpoint[] = [];
+  const seen = new Set<string>();
+
+  for (const endpoint of endpoints) {
+    const key = endpointIdentity(endpoint.endpoint, endpoint.method, endpoint.query, endpoint.body);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    output.push(endpoint);
+  }
+
+  return output;
+}
+
+function buildPublicProfileLookupEndpoints(targetUsername: string): DashboardFallbackEndpoint[] {
+  const normalizedTarget = targetUsername.trim();
+  const endpoints: DashboardFallbackEndpoint[] = [
+    {
+      endpoint: "/api/user/find",
+      method: "GET",
+      query: { username: normalizedTarget },
+    },
+    {
+      endpoint: "/api/user/find",
+      method: "GET",
+      query: { name: normalizedTarget },
+    },
+    {
+      endpoint: "/api/user/find",
+      method: "GET",
+      query: { user: normalizedTarget },
+    },
+    {
+      endpoint: "/api/user/find",
+      method: "POST",
+      body: { username: normalizedTarget },
+    },
+    {
+      endpoint: "/api/user/find",
+      method: "POST",
+      body: { name: normalizedTarget },
+    },
+    {
+      endpoint: "/api/user/profile",
+      method: "GET",
+      query: { username: normalizedTarget },
+    },
+  ];
+
+  return dedupeFallbackEndpoints(endpoints);
+}
+
+function buildPublicRoomsFallbackEndpoints(
+  targetUsername: string,
+  userId?: string
+): DashboardFallbackEndpoint[] {
+  const normalizedTarget = targetUsername.trim();
+  const normalizedUserId = userId?.trim();
+  const endpoints: DashboardFallbackEndpoint[] = [];
+
+  if (normalizedUserId) {
+    endpoints.push({
+      endpoint: "/api/user/rooms",
+      method: "GET",
+      query: { id: normalizedUserId },
+    });
+    endpoints.push({
+      endpoint: "/api/user/rooms",
+      method: "GET",
+      query: { user: normalizedUserId },
+    });
+  }
+
+  endpoints.push({
+    endpoint: "/api/user/rooms",
+    method: "GET",
+    query: { username: normalizedTarget },
+  });
+  endpoints.push({
+    endpoint: "/api/user/rooms",
+    method: "GET",
+    query: { name: normalizedTarget },
+  });
+
+  return dedupeFallbackEndpoints(endpoints);
+}
+
+function buildPublicStatsFallbackEndpoints(
+  targetUsername: string,
+  userId?: string
+): DashboardFallbackEndpoint[] {
+  const normalizedTarget = targetUsername.trim();
+  const normalizedUserId = userId?.trim();
+  const endpoints: DashboardFallbackEndpoint[] = [];
+
+  if (normalizedUserId) {
+    endpoints.push(
+      {
+        endpoint: "/api/user/stats",
+        method: "GET",
+        query: { id: normalizedUserId, interval: 8, statName: "energyHarvested" },
+      },
+      {
+        endpoint: "/api/user/stats",
+        method: "GET",
+        query: { id: normalizedUserId, interval: 8 },
+      },
+      {
+        endpoint: "/api/user/stats",
+        method: "GET",
+        query: { id: normalizedUserId },
+      }
+    );
+  }
+
+  endpoints.push(
+    {
+      endpoint: "/api/user/stats",
+      method: "GET",
+      query: { username: normalizedTarget, interval: 8, statName: "energyHarvested" },
+    },
+    {
+      endpoint: "/api/user/stats",
+      method: "GET",
+      query: { username: normalizedTarget, interval: 8 },
+    },
+    {
+      endpoint: "/api/user/stats",
+      method: "GET",
+      query: { username: normalizedTarget },
+    },
+    {
+      endpoint: "/api/user/overview",
+      method: "POST",
+      body: { username: normalizedTarget, interval: 8, statName: "energyHarvested", shard: "shard0" },
+    }
+  );
+
+  return dedupeFallbackEndpoints(endpoints);
+}
 
 function buildRoomsFallbackEndpoints(userId?: string): DashboardFallbackEndpoint[] {
   const normalizedUserId = typeof userId === "string" ? userId.trim() : "";
@@ -103,7 +260,7 @@ const ROOM_THUMBNAIL_RETRY_BASE_MS = 450;
 const ROOM_THUMBNAIL_RETRY_DELAY_MS = 12_000;
 const ROOM_THUMBNAIL_NON_TRANSIENT_RETRY_DELAY_MS = 48_000;
 const ROOM_THUMBNAIL_REQUEST_WINDOW_MS = 60_000;
-const ROOM_THUMBNAIL_REQUEST_LIMIT = 6;
+const ROOM_THUMBNAIL_REQUEST_LIMIT = 32;
 const ROOM_THUMBNAIL_ROTATE_STEP = 3;
 const ROOM_THUMBNAIL_CACHE = new Map<string, string>();
 const ROOM_THUMBNAIL_RETRY_AT = new Map<string, number>();
@@ -114,7 +271,7 @@ const ROOM_OBJECTS_RETRY_BASE_MS = 300;
 const ROOM_OBJECTS_RETRY_DELAY_MS = 18_000;
 const ROOM_OBJECTS_NON_TRANSIENT_RETRY_DELAY_MS = 60_000;
 const ROOM_OBJECTS_REQUEST_WINDOW_MS = 60_000;
-const ROOM_OBJECTS_REQUEST_LIMIT = 12;
+const ROOM_OBJECTS_REQUEST_LIMIT = 48;
 const ROOM_OBJECTS_CACHE = new Map<string, RoomObjectSummary[]>();
 const ROOM_OBJECTS_RETRY_AT = new Map<string, number>();
 const ROOM_OBJECTS_REQUEST_TIMESTAMPS: number[] = [];
@@ -153,9 +310,9 @@ function buildRoomLevelKey(room: RoomSummary, baseUrl: string): string {
   return buildRoomThumbnailKey(room, baseUrl);
 }
 
-function buildRoomThumbnailScopeKey(session: ScreepsSession): string {
+function buildRoomThumbnailScopeKey(session: ScreepsSession, scopeUsername?: string): string {
   const normalizedBase = normalizeBaseUrl(session.baseUrl).toLowerCase();
-  const normalizedUsername = session.username.trim().toLowerCase();
+  const normalizedUsername = (scopeUsername ?? session.username).trim().toLowerCase();
   return `${normalizedBase}|${normalizedUsername}`;
 }
 
@@ -560,6 +717,53 @@ function extractObjectRoomName(record: Record<string, unknown>): string | undefi
   );
 }
 
+function mergeStoreValue(
+  sink: Record<string, number>,
+  resourceType: string | undefined,
+  amount: number | undefined
+): void {
+  const key = resourceType?.trim();
+  if (!key || amount === undefined || !Number.isFinite(amount) || amount <= 0) {
+    return;
+  }
+  sink[key] = (sink[key] ?? 0) + amount;
+}
+
+function extractObjectStore(record: Record<string, unknown>): Record<string, number> | undefined {
+  const output: Record<string, number> = {};
+
+  const storeCandidates = [
+    toNumericRecord(record.store),
+    toNumericRecord(asRecord(record.store)?.store),
+    toNumericRecord(record.resources),
+    toNumericRecord(asRecord(record.resources)?.store),
+  ];
+
+  for (const candidate of storeCandidates) {
+    if (!candidate) {
+      continue;
+    }
+    for (const [resourceType, amount] of Object.entries(candidate)) {
+      mergeStoreValue(output, resourceType, amount);
+    }
+  }
+
+  const resourceType = firstString([record.resourceType, record.resource]);
+  const resourceAmount = firstNumber([record.amount, record.resourceAmount]);
+  mergeStoreValue(output, resourceType, resourceAmount);
+
+  const mineralType = firstString([record.mineralType]);
+  const mineralAmount = firstNumber([record.mineralAmount, record.mineral]);
+  mergeStoreValue(output, mineralType, mineralAmount);
+
+  mergeStoreValue(output, "energy", asNumber(record.energy));
+  mergeStoreValue(output, "power", asNumber(record.power));
+  mergeStoreValue(output, "ops", asNumber(record.ops));
+  mergeStoreValue(output, "ghodium", asNumber(record.ghodium));
+
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
 function resolveRoomObjectType(record: Record<string, unknown>): string | undefined {
   const directType = firstString([record.type, record.objectType, record.structureType]);
   if (directType) {
@@ -580,8 +784,12 @@ function resolveRoomObjectType(record: Record<string, unknown>): string | undefi
   }
 
   const resourceType = firstString([record.resourceType, record.resource]);
-  if (resourceType === "energy" && firstNumber([record.amount, record.energy]) !== undefined) {
-    return "energy";
+  if (resourceType && firstNumber([record.amount, record.resourceAmount, record.energy]) !== undefined) {
+    return "resource";
+  }
+
+  if (extractObjectStore(record)) {
+    return "structure";
   }
 
   return undefined;
@@ -616,7 +824,7 @@ function parseRoomObjectsForThumbnail(roomName: string, payload: unknown): RoomO
     const ownerRecord = asRecord(record.owner);
     const id =
       firstString([record._id, record.id]) ?? `${type}:${x}:${y}:${summaries.size + 1}`;
-    const store = toNumericRecord(record.store);
+    const store = extractObjectStore(record);
     const energy = firstNumber([record.energy, store?.energy]);
     const objectSummary: RoomObjectSummary = {
       id,
@@ -773,6 +981,46 @@ function deriveLevelProgressFromPoints(
     progressTotal,
     progressPercent,
   };
+}
+
+function derivePowerLevelProgressFromPoints(
+  totalPoints: number | undefined
+): DerivedLevelProgress | undefined {
+  if (totalPoints === undefined || !Number.isFinite(totalPoints) || totalPoints < 0) {
+    return undefined;
+  }
+
+  const points = Math.floor(totalPoints);
+  const level = Math.floor(Math.sqrt(points / 1_000));
+  const previousTotal = level * level * 1_000;
+  const nextLevel = level + 1;
+  const nextTotal = nextLevel * nextLevel * 1_000;
+  const progress = Math.max(0, points - previousTotal);
+  const progressTotal = Math.max(1, nextTotal - previousTotal);
+  const progressPercent = (progress / progressTotal) * 100;
+
+  return {
+    level,
+    progress,
+    progressTotal,
+    progressPercent,
+  };
+}
+
+function normalizePowerLevelFromPoints(
+  level: number | undefined,
+  totalPoints: number | undefined
+): number | undefined {
+  if (level === undefined) {
+    return undefined;
+  }
+
+  const derivedLevel = derivePowerLevelProgressFromPoints(totalPoints)?.level;
+  if (derivedLevel !== undefined && level === derivedLevel + 1) {
+    return derivedLevel;
+  }
+
+  return level;
 }
 
 function isLikelyLevel(value: number): boolean {
@@ -941,7 +1189,8 @@ function extractResources(profilePayload: unknown, statsPayload?: unknown): User
 function extractProfile(
   session: ScreepsSession,
   profilePayload: unknown,
-  statsPayload?: unknown
+  statsPayload?: unknown,
+  usernameFallback?: string
 ): UserProfileSummary {
   const root = pickPayloadRecord(profilePayload, PROFILE_SIGNAL_KEYS);
   const user = asRecord(root.user) ?? root;
@@ -1008,7 +1257,7 @@ function extractProfile(
       stats.name,
       user._id,
       root._id,
-    ]) ?? session.username;
+    ]) ?? usernameFallback ?? session.username;
   const userId = firstString([
     user._id,
     root._id,
@@ -1282,9 +1531,10 @@ function extractProfile(
     gclLevel === undefined && gclTotalPoints !== undefined && gclTotalPoints > 1000
       ? deriveLevelProgressFromPoints(gclTotalPoints, 1_000_000, 2.4)
       : undefined;
+  const normalizedGplLevel = normalizePowerLevelFromPoints(gplLevel, gplTotalPoints);
   const derivedGpl =
-    gplLevel === undefined && gplTotalPoints !== undefined && gplTotalPoints > 1000
-      ? deriveLevelProgressFromPoints(gplTotalPoints, 1_000, 2)
+    normalizedGplLevel === undefined && gplTotalPoints !== undefined
+      ? derivePowerLevelProgressFromPoints(gplTotalPoints)
       : undefined;
 
   const resolvedGclLevel = gclLevel ?? derivedGcl?.level;
@@ -1296,7 +1546,7 @@ function extractProfile(
       toPercent(resolvedGclProgress, resolvedGclProgressTotal)
   );
 
-  const resolvedGplLevel = gplLevel ?? derivedGpl?.level;
+  const resolvedGplLevel = normalizedGplLevel ?? derivedGpl?.level;
   const resolvedGplProgress = gplProgress ?? derivedGpl?.progress;
   const resolvedGplProgressTotal = gplProgressTotal ?? derivedGpl?.progressTotal;
   const resolvedGplProgressPercent = normalizePercent(
@@ -1627,6 +1877,46 @@ function endpointIdentity(
   return `${(method ?? "GET").toUpperCase()} ${endpoint} q:${JSON.stringify(query ?? {})} b:${JSON.stringify(body ?? null)}`;
 }
 
+function extractPayloadUsername(payload: unknown): string | undefined {
+  const root = pickPayloadRecord(payload, PROFILE_SIGNAL_KEYS);
+  const user = asRecord(root.user) ?? root;
+  return firstString([user.username, user.name, root.username, root.name]);
+}
+
+function hasUsefulProfilePayload(payload: unknown): boolean {
+  const root = pickPayloadRecord(payload, PROFILE_SIGNAL_KEYS);
+  const user = asRecord(root.user) ?? {};
+  const resources = asRecord(root.resources) ?? {};
+  const userResources = asRecord(user.resources) ?? {};
+
+  return [
+    user.username,
+    user.name,
+    root.username,
+    root.name,
+    user.gcl,
+    root.gcl,
+    user.power,
+    root.power,
+    userResources.credits,
+    userResources.pixels,
+    resources.credits,
+    resources.pixels,
+    extractProfileUserId(payload),
+  ].some((value) => value !== undefined);
+}
+
+function isExternalTargetUsername(
+  session: ScreepsSession,
+  targetUsername?: string
+): targetUsername is string {
+  const normalizedTarget = normalizeUsernameCandidate(targetUsername)?.toLowerCase();
+  if (!normalizedTarget) {
+    return false;
+  }
+  return normalizedTarget !== session.username.trim().toLowerCase();
+}
+
 function hasUsefulStatsPayload(payload: unknown): boolean {
   const stats = pickPayloadRecord(payload, STATS_SIGNAL_KEYS);
   const statsUser = asRecord(stats.user) ?? {};
@@ -1840,9 +2130,6 @@ async function fetchRoomThumbnail(
     terrainQueries.push({ room: room.name, encoded: 1, shard: room.shard });
   }
   terrainQueries.push({ room: room.name, encoded: 1 });
-  if (!room.shard || room.shard !== "shard0") {
-    terrainQueries.push({ room: room.name, encoded: 1, shard: "shard0" });
-  }
 
   let transientOrUnknownFailure = false;
   for (let attempt = 0; attempt < ROOM_THUMBNAIL_MAX_ATTEMPTS; attempt += 1) {
@@ -1947,19 +2234,6 @@ function buildRoomObjectsRequests(room: RoomSummary): RoomObjectsRequestCandidat
     method: "POST",
     body: { room: room.name },
   });
-
-  if (!shard || shard.toLowerCase() !== "shard0") {
-    requests.push({
-      endpoint: "/api/game/room-objects",
-      method: "GET",
-      query: { room: room.name, shard: "shard0" },
-    });
-    requests.push({
-      endpoint: "/api/game/room-objects",
-      method: "POST",
-      body: { room: room.name, shard: "shard0" },
-    });
-  }
 
   return requests;
 }
@@ -2105,7 +2379,7 @@ export async function fetchDashboardRoomObjects(
     return result;
   }
 
-  const fetched = await mapWithConcurrency(pendingRooms, 2, async (room) => {
+  const fetched = await mapWithConcurrency(pendingRooms, 4, async (room) => {
     try {
       const roomObjects = await fetchRoomObjectsForThumbnail(
         session.baseUrl,
@@ -2129,12 +2403,16 @@ export async function fetchDashboardRoomObjects(
   return result;
 }
 
-async function fetchRoomThumbnails(session: ScreepsSession, rooms: RoomSummary[]): Promise<RoomThumbnail[]> {
+async function fetchRoomThumbnails(
+  session: ScreepsSession,
+  rooms: RoomSummary[],
+  scopeUsername?: string
+): Promise<RoomThumbnail[]> {
   if (!rooms.length) {
     return [];
   }
 
-  const scopeKey = buildRoomThumbnailScopeKey(session);
+  const scopeKey = buildRoomThumbnailScopeKey(session, scopeUsername);
   // Rotate fetch order between refresh cycles so failed rooms do not starve later entries.
   const start = (() => {
     const current = ROOM_THUMBNAIL_FETCH_CURSOR.get(scopeKey) ?? 0;
@@ -2154,7 +2432,7 @@ async function fetchRoomThumbnails(session: ScreepsSession, rooms: RoomSummary[]
   }
 
   const now = Date.now();
-  const thumbnails = await mapWithConcurrency(rotatedRooms, 4, (room) => {
+  const thumbnails = await mapWithConcurrency(rotatedRooms, 6, (room) => {
     const roomKey = buildRoomThumbnailKey(room, session.baseUrl);
     const cachedTerrainRaw =
       ROOM_THUMBNAIL_CACHE.get(roomKey) ??
@@ -2186,7 +2464,89 @@ async function fetchRoomThumbnails(session: ScreepsSession, rooms: RoomSummary[]
   });
 }
 
-export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<DashboardSnapshot> {
+async function fetchDashboardSnapshotForTargetUser(
+  session: ScreepsSession,
+  targetUsername: string
+): Promise<DashboardSnapshot> {
+  const normalizedTarget = targetUsername.trim();
+  const targetLower = normalizedTarget.toLowerCase();
+  const profilePayload = await tryFallbackPayload(
+    session,
+    buildPublicProfileLookupEndpoints(normalizedTarget),
+    undefined,
+    (payload) => {
+      if (!hasUsefulProfilePayload(payload)) {
+        return false;
+      }
+      const payloadUsername = extractPayloadUsername(payload);
+      return !payloadUsername || payloadUsername.toLowerCase() === targetLower;
+    }
+  );
+
+  if (profilePayload === undefined) {
+    throw new Error(`Failed to find public profile for "${normalizedTarget}".`);
+  }
+
+  const profileUserId = extractProfileUserId(profilePayload);
+  const safeStatsPayload = await tryFallbackPayload(
+    session,
+    buildPublicStatsFallbackEndpoints(normalizedTarget, profileUserId),
+    undefined,
+    hasUsefulStatsPayload
+  );
+
+  let safeRoomsPayload = await tryFallbackPayload(
+    session,
+    buildPublicRoomsFallbackEndpoints(normalizedTarget, profileUserId),
+    undefined,
+    hasUsefulRoomsPayload
+  );
+
+  if (!hasUsefulRoomsPayload(safeRoomsPayload) && hasUsefulRoomsPayload(profilePayload)) {
+    safeRoomsPayload = profilePayload;
+  }
+
+  const profile = extractProfile(session, profilePayload, safeStatsPayload, normalizedTarget);
+  const cacheUsername = normalizeUsernameCandidate(profile.username) ?? normalizedTarget;
+  const cachedRooms = getRoomSummariesFromCache(session.baseUrl, cacheUsername);
+
+  const shouldTryBadgeAvatar =
+    !profile.avatarUrl || /\/api\/user\/avatar/i.test(profile.avatarUrl);
+  if (shouldTryBadgeAvatar) {
+    const badgeAvatar = await fetchBadgeAvatar(session.baseUrl, session.token, profile.username);
+    if (badgeAvatar) {
+      profile.avatarUrl = badgeAvatar;
+    }
+  }
+
+  let parsedRooms = extractRooms(safeRoomsPayload, profilePayload);
+  if (parsedRooms.length === 0 && cachedRooms.length > 0) {
+    parsedRooms = cachedRooms;
+  }
+  if (parsedRooms.length > 0) {
+    setRoomSummariesToCache(session.baseUrl, cacheUsername, parsedRooms);
+  }
+
+  const rooms = await hydrateRoomLevelsFromMapStats(session, parsedRooms);
+  const roomThumbnails = await fetchRoomThumbnails(session, rooms, cacheUsername);
+
+  return {
+    fetchedAt: new Date().toISOString(),
+    profile,
+    rooms,
+    roomThumbnails,
+  };
+}
+
+export async function fetchDashboardSnapshot(
+  session: ScreepsSession,
+  options?: DashboardSnapshotOptions
+): Promise<DashboardSnapshot> {
+  const normalizedTargetUsername = normalizeUsernameCandidate(options?.targetUsername);
+  if (isExternalTargetUsername(session, normalizedTargetUsername)) {
+    return fetchDashboardSnapshotForTargetUser(session, normalizedTargetUsername);
+  }
+
   const requestBatch: ScreepsRequest[] = [
     {
       baseUrl: session.baseUrl,
@@ -2371,7 +2731,7 @@ export async function fetchDashboardSnapshot(session: ScreepsSession): Promise<D
   }
 
   const rooms = await hydrateRoomLevelsFromMapStats(session, parsedRooms);
-  const roomThumbnails = await fetchRoomThumbnails(session, rooms);
+  const roomThumbnails = await fetchRoomThumbnails(session, rooms, profile.username || session.username);
 
   return {
     fetchedAt: new Date().toISOString(),

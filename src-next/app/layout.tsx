@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ChunkLoadRecovery } from "../components/chunk-load-recovery";
 
 export const metadata: Metadata = {
   title: "Screeps Dashboard",
@@ -19,7 +20,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <ChunkLoadRecovery />
+        {children}
+      </body>
     </html>
   );
 }
+

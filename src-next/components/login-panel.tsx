@@ -15,9 +15,9 @@ import {
 } from "../lib/screeps/endpoints";
 import { normalizeBaseUrl } from "../lib/screeps/request";
 import { useAuthStore } from "../stores/auth-store";
-import { useSettingsStore } from "../stores/settings-store";
+import { type AccountAuthMode, useSettingsStore } from "../stores/settings-store";
 
-type AuthMode = "password" | "token";
+type AuthMode = AccountAuthMode;
 
 const OFFICIAL_SERVER_URL = "https://screeps.com";
 
@@ -181,9 +181,16 @@ export function LoginPanel() {
       setServerUrl(server.baseUrl);
     }
 
+    const accountMode = account.authMode ?? "token";
     setUsername(account.username);
-    setToken(account.token);
-    setAuthMode("token");
+    setAuthMode(accountMode);
+    if (accountMode === "password") {
+      setPassword(account.password ?? "");
+      setToken("");
+    } else {
+      setToken(account.token ?? "");
+      setPassword("");
+    }
     setRememberAccount(true);
     setActiveAccountId(account.id);
   }, [accounts, selectedAccountId, servers, setActiveAccountId]);
@@ -191,8 +198,49 @@ export function LoginPanel() {
   useEffect(() => {
     void router.prefetch("/user");
     void router.prefetch("/rooms");
+    void router.prefetch("/resources");
     void router.prefetch("/rankings");
   }, [router]);
+
+  function handleGuestSignIn() {
+    setErrorMessage(null);
+    try {
+      const baseUrl = normalizeBaseUrl(serverUrl);
+      const selectedServer = servers.find((item) => item.id === serverId);
+      const serverByUrl = servers.find((item) => normalizeBaseUrl(item.baseUrl) === baseUrl);
+      const selectedServerUrl = selectedServer
+        ? normalizeBaseUrl(selectedServer.baseUrl)
+        : undefined;
+      const selectedChanged = Boolean(selectedServer && selectedServerUrl !== baseUrl);
+      let resolvedServerId = selectedChanged
+        ? serverByUrl?.id
+        : selectedServer?.id ?? serverByUrl?.id;
+
+      if (!resolvedServerId) {
+        resolvedServerId = addServer(inferServerName(baseUrl), baseUrl);
+      }
+
+      setSession({
+        baseUrl,
+        token: "",
+        username: t("app.guestLabel"),
+        userId: undefined,
+        endpointMap: buildOptimisticEndpointMap(),
+        verifiedAt: new Date().toISOString(),
+        probes: [],
+        serverId: resolvedServerId,
+        accountId: undefined,
+      });
+
+      if (resolvedServerId) {
+        setActiveServerId(resolvedServerId);
+      }
+      setActiveAccountId(null);
+      router.replace("/rooms");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : t("common.unknownError"));
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -251,25 +299,45 @@ export function LoginPanel() {
       if (!resolvedServerId) {
         resolvedServerId = addServer(inferServerName(baseUrl), baseUrl);
       }
-      let resolvedAccountId = selectedAccountId || undefined;
+      const shouldPersistTokenAccount = rememberAccount && authMode === "token";
+      let resolvedAccountId: string | undefined;
 
-      if (rememberAccount && resolvedServerId && !resolvedAccountId) {
+      if (shouldPersistTokenAccount && resolvedServerId) {
         const normalizedToken = resolvedToken.trim();
-        const existingAccount = accounts.find(
-          (account) =>
-            account.serverId === resolvedServerId && account.token.trim() === normalizedToken
+        const selectedAccount = selectedAccountId
+          ? accounts.find((account) => account.id === selectedAccountId)
+          : undefined;
+        const selectedAccountMode = selectedAccount?.authMode ?? "token";
+        const selectedAccountToken = selectedAccount?.token?.trim() ?? "";
+        const selectedAccountMatchesToken = Boolean(
+          selectedAccount &&
+            selectedAccountMode === "token" &&
+            selectedAccount.serverId === resolvedServerId &&
+            selectedAccountToken === normalizedToken
         );
 
-        if (existingAccount) {
-          resolvedAccountId = existingAccount.id;
+        if (selectedAccountMatchesToken) {
+          resolvedAccountId = selectedAccount?.id;
         } else {
-          const accountLabel = probeUsername || initialDisplayName || "Account";
-          resolvedAccountId = addAccount({
-            label: accountLabel,
-            username: probeUsername ?? "",
-            token: resolvedToken,
-            serverId: resolvedServerId,
-          });
+          const existingAccount = accounts.find(
+            (account) =>
+              (account.authMode ?? "token") === "token" &&
+              account.serverId === resolvedServerId &&
+              (account.token?.trim() ?? "") === normalizedToken
+          );
+
+          if (existingAccount) {
+            resolvedAccountId = existingAccount.id;
+          } else {
+            const accountLabel = probeUsername || initialDisplayName || "Account";
+            resolvedAccountId = addAccount({
+              label: accountLabel,
+              username: probeUsername ?? "",
+              authMode: "token",
+              token: resolvedToken,
+              serverId: resolvedServerId,
+            });
+          }
         }
       }
 
@@ -325,7 +393,7 @@ export function LoginPanel() {
       if (resolvedServerId) {
         setActiveServerId(resolvedServerId);
       }
-      setActiveAccountId(rememberAccount ? resolvedAccountId ?? null : null);
+      setActiveAccountId(shouldPersistTokenAccount ? resolvedAccountId ?? null : null);
 
       setPassword("");
       if (!selectedAccountId) {
@@ -454,9 +522,9 @@ export function LoginPanel() {
       </form>
 
       <div className="inline-actions">
-        <Link className="ghost-button" href="/rooms">
+        <button className="ghost-button" onClick={handleGuestSignIn} type="button">
           {t("login.guestAction")}
-        </Link>
+        </button>
         <Link className="ghost-button" href="/rankings">
           {t("login.rankingAction")}
         </Link>

@@ -19,8 +19,9 @@ export default function HomePage() {
     }
 
     void router.prefetch("/user");
+    void router.prefetch("/rooms");
     void router.prefetch("/login");
-    router.replace(session ? "/user" : "/login");
+    router.replace(session ? (session.token.trim() ? "/user" : "/rooms") : "/login");
   }, [hasHydrated, router, session]);
 
   return (

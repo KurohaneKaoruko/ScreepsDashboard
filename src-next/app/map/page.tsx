@@ -7,8 +7,8 @@ export default function MapPage() {
     <AuthGuard>
       <AppShell>
         <PlaceholderPage
-          title="\u5730\u56fe / Map"
-          description="\u5730\u56fe\u529f\u80fd\u6b63\u5728\u5f00\u53d1\u4e2d\u3002Map page is under development."
+          titleKey="map.title"
+          descriptionKey="map.subtitle"
         />
       </AppShell>
     </AuthGuard>

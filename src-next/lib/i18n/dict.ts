@@ -4,7 +4,7 @@ const zh = {
   "app.brandTitle": "Screeps 仪表盘",
   "app.brandSubtitle": "数据总览",
   "app.signIn": "登录",
-  "app.signOut": "退出登录",
+  "app.signOut": "登出",
   "app.guestLabel": "访客",
   "app.serverUnknown": "--",
   "app.guestModeHint": "游客模式",
@@ -27,6 +27,7 @@ const zh = {
   "nav.roomsDesc": "搜索房间并查看可视化地图详情。",
   "nav.resourcesLabel": "资源",
   "nav.resourcesDesc": "按 Shard 查看资源汇总与房间明细。",
+  "nav.mapLabel": "\u5730\u56fe",
   "nav.consoleLabel": "控制台",
   "nav.consoleDesc": "Console tools and script output.",
   "nav.rankingsLabel": "排行榜",
@@ -37,6 +38,10 @@ const zh = {
   "nav.logsDesc": "日志功能已移除。",
   "nav.loginLabel": "登录",
   "nav.loginDesc": "使用密码或 Token 登录。",
+  "nav.lookupTitle": "公开用户查看",
+  "nav.lookupPlaceholder": "输入用户名",
+  "nav.lookupUserAction": "用户页",
+  "nav.lookupResourcesAction": "资源页",
 
   "home.redirecting": "正在根据登录状态跳转...",
 
@@ -63,6 +68,9 @@ const zh = {
   "login.accountRequired": "账号和密码不能为空。",
 
   "auth.loading": "正在加载会话...",
+
+  "map.title": "\u5730\u56fe",
+  "map.subtitle": "\u5730\u56fe\u529f\u80fd\u6b63\u5728\u5f00\u53d1\u4e2d\u3002",
   "auth.redirectingToLogin": "正在跳转到登录页...",
 
   "dashboard.title": "用户",
@@ -101,6 +109,7 @@ const zh = {
   "resources.title": "资源",
   "resources.subtitle": "按 Shard 展示房间建筑库存资源，悬停查看各房间明细。",
   "resources.shard": "Shard",
+  "resources.shardAll": "全部汇总",
   "resources.resource": "资源",
   "resources.total": "总量",
   "resources.roomBreakdown": "房间明细",
@@ -395,6 +404,7 @@ const en: Record<TranslationKey, string> = {
   "nav.roomsDesc": "Search rooms and open visual map detail.",
   "nav.resourcesLabel": "Resources",
   "nav.resourcesDesc": "View resource totals by shard with room-level breakdown.",
+  "nav.mapLabel": "Map",
   "nav.consoleLabel": "Console",
   "nav.consoleDesc": "Console tools and script output.",
   "nav.rankingsLabel": "Rankings",
@@ -405,6 +415,10 @@ const en: Record<TranslationKey, string> = {
   "nav.logsDesc": "Logs were removed.",
   "nav.loginLabel": "Login",
   "nav.loginDesc": "Sign in with password or token.",
+  "nav.lookupTitle": "Public User Lookup",
+  "nav.lookupPlaceholder": "Enter username",
+  "nav.lookupUserAction": "Open user",
+  "nav.lookupResourcesAction": "Open resources",
 
   "home.redirecting": "Redirecting based on your session...",
 
@@ -430,6 +444,9 @@ const en: Record<TranslationKey, string> = {
   "login.tokenEmpty": "Token cannot be empty.",
   "login.accountRequired": "Account and password are required.",
 
+
+  "map.title": "Map",
+  "map.subtitle": "Map page is under development.",
   "auth.loading": "Loading session...",
   "auth.redirectingToLogin": "Redirecting to login...",
 
@@ -469,6 +486,7 @@ const en: Record<TranslationKey, string> = {
   "resources.title": "Resources",
   "resources.subtitle": "Resource inventories from room structures, grouped by shard with hover details.",
   "resources.shard": "Shard",
+  "resources.shardAll": "All Shards",
   "resources.resource": "Resource",
   "resources.total": "Total",
   "resources.roomBreakdown": "Room breakdown",
@@ -740,6 +758,7 @@ export const messages: Record<Locale, Record<TranslationKey, string>> = {
 };
 
 export const defaultLocale: Locale = "zh-CN";
+
 
 
 

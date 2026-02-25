@@ -30,7 +30,7 @@ export default function LoginPage() {
     }
 
     if (session) {
-      router.replace("/user");
+      router.replace(session.token.trim() ? "/user" : "/rooms");
     }
   }, [hasHydrated, router, session]);
 

@@ -10,11 +10,15 @@ export interface ServerProfile {
   baseUrl: string;
 }
 
+export type AccountAuthMode = "token" | "password";
+
 export interface AccountProfile {
   id: string;
   label: string;
   username: string;
-  token: string;
+  authMode?: AccountAuthMode;
+  token?: string;
+  password?: string;
   serverId: string;
 }
 
@@ -41,7 +45,9 @@ interface SettingsState {
   addAccount: (input: {
     label: string;
     username: string;
-    token: string;
+    authMode: AccountAuthMode;
+    token?: string;
+    password?: string;
     serverId: string;
   }) => string;
   removeAccount: (accountId: string) => void;
@@ -137,13 +143,23 @@ export const useSettingsStore = create<SettingsState>()(
         });
       },
 
-      addAccount: ({ label, username, token, serverId }) => {
+      addAccount: ({ label, username, authMode, token, password, serverId }) => {
         const trimmedLabel = label.trim();
         const trimmedUsername = username.trim();
-        const trimmedToken = token.trim();
+        const mode = authMode;
+        const trimmedToken = token?.trim() ?? "";
+        const rawPassword = password ?? "";
 
-        if (!trimmedLabel || !trimmedToken) {
-          throw new Error("Account label and token are required.");
+        if (!trimmedLabel) {
+          throw new Error("Account label is required.");
+        }
+
+        if (mode === "token" && !trimmedToken) {
+          throw new Error("Token is required for token mode.");
+        }
+
+        if (mode === "password" && (!trimmedUsername || !rawPassword)) {
+          throw new Error("Username and password are required for password mode.");
         }
 
         const state = get();
@@ -159,7 +175,9 @@ export const useSettingsStore = create<SettingsState>()(
               id,
               label: trimmedLabel,
               username: trimmedUsername,
-              token: trimmedToken,
+              authMode: mode,
+              token: mode === "token" ? trimmedToken : "",
+              password: mode === "password" ? rawPassword : "",
               serverId,
             },
           ],

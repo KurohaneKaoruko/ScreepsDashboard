@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
 import { fetchAllianceFullNameByPlayer } from "../lib/screeps/alliances";
@@ -31,6 +32,7 @@ import type { RoomObjectSummary, RoomThumbnail } from "../lib/screeps/types";
 import { useAuthStore } from "../stores/auth-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { MetricCell } from "./metric-cell";
+import { MetricBar } from "./metric-bar";
 import { CircularProgress } from "./circular-progress";
 import { TerrainThumbnail } from "./terrain-thumbnail";
 
@@ -69,6 +71,23 @@ function formatPercent(value: number | undefined): string {
   return `${value.toFixed(2)}%`;
 }
 
+function formatCreditsValue(value: number | undefined): ReactNode {
+  const formatted = formatNumber(value, 3, { fixed: true });
+  const decimalMatch = formatted.match(/([.,]\d+)$/);
+  if (!decimalMatch) {
+    return formatted;
+  }
+
+  const decimalPart = decimalMatch[1];
+  const integerPart = formatted.slice(0, -decimalPart.length);
+  return (
+    <>
+      <span className="metric-value-integer">{integerPart}</span>
+      <span className="metric-value-decimal">{decimalPart}</span>
+    </>
+  );
+}
+
 function formatRatio(used: number | undefined, total: number | undefined): string {
   if (used === undefined || total === undefined) {
     return "--/--";
@@ -81,6 +100,14 @@ function formatMemoryRatio(used: number | undefined, total: number | undefined):
     return "--/--";
   }
   return `${formatNumber(used, 0)}/${formatNumber(total, 0)}`;
+}
+
+function normalizeTargetUsername(value: string | null): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function errorToMessage(error: unknown): string {
@@ -218,8 +245,9 @@ interface DashboardPanelProps {
 }
 
 export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const session = useAuthStore((state) => state.session);
+  const searchParams = useSearchParams();
   const refreshIntervalMs = useSettingsStore((state) => state.refreshIntervalMs);
   const [avatarCandidateIndex, setAvatarCandidateIndex] = useState(0);
   const [ringSize, setRingSize] = useState(114);
@@ -227,14 +255,33 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
   const [roomMapOverlays, setRoomMapOverlays] = useState<Record<string, RoomMapOverlay>>({});
   const [roomObjectsByKey, setRoomObjectsByKey] = useState<Record<string, RoomObjectSummary[]>>({});
   const [collapsedShardMap, setCollapsedShardMap] = useState<Record<string, boolean>>({});
+  const requestedTargetUsername = useMemo(
+    () => normalizeTargetUsername(searchParams.get("target")),
+    [searchParams]
+  );
+  const externalTargetUsername = useMemo(() => {
+    if (!session || !requestedTargetUsername) {
+      return undefined;
+    }
+
+    if (requestedTargetUsername.toLowerCase() === session.username.trim().toLowerCase()) {
+      return undefined;
+    }
+
+    return requestedTargetUsername;
+  }, [requestedTargetUsername, session]);
+  const isGuestSession = Boolean(session && !session.token.trim());
+  const requiresPublicTarget = Boolean(isGuestSession && !externalTargetUsername);
 
   if (!session) {
     return null;
   }
 
   const { data, error, isLoading, isValidating } = useSWR(
-    ["dashboard", session.baseUrl, session.token, session.verifiedAt],
-    () => fetchDashboardSnapshot(session),
+    requiresPublicTarget
+      ? null
+      : ["dashboard", session.baseUrl, session.token, session.verifiedAt, externalTargetUsername ?? ""],
+    () => fetchDashboardSnapshot(session, { targetUsername: externalTargetUsername }),
     {
       refreshInterval: refreshIntervalMs,
       dedupingInterval: 8_000,
@@ -246,6 +293,7 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
   const [showDelayedError, setShowDelayedError] = useState(false);
 
   const profile = data?.profile;
+  const isPublicProfileView = Boolean(externalTargetUsername);
   const avatarFallback = profile?.username?.slice(0, 1).toUpperCase() ?? "?";
   const cpuUsed = runtimeMetrics.cpuUsed ?? profile?.cpuUsed;
   const cpuLimit = runtimeMetrics.cpuLimit ?? profile?.cpuLimit;
@@ -259,17 +307,19 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
     () =>
       buildAvatarCandidates(
         session.baseUrl,
-        profile?.username ?? session.username,
+        profile?.username ?? externalTargetUsername ?? session.username,
         profile?.avatarUrl
       ),
-    [profile?.avatarUrl, profile?.username, session.baseUrl, session.username]
+    [externalTargetUsername, profile?.avatarUrl, profile?.username, session.baseUrl, session.username]
   );
   const avatarSrc = avatarCandidates[avatarCandidateIndex];
   const roomThumbnails = data?.roomThumbnails ?? EMPTY_ROOM_THUMBNAILS;
-  const runtimeRealtimeChannels = useMemo(
-    () => buildRuntimeChannels(session.username, profile?.username, profile?.userId),
-    [profile?.userId, profile?.username, session.username]
-  );
+  const runtimeRealtimeChannels = useMemo(() => {
+    if (externalTargetUsername) {
+      return [];
+    }
+    return buildRuntimeChannels(session.username, profile?.username, profile?.userId);
+  }, [externalTargetUsername, profile?.userId, profile?.username, session.username]);
   const roomRealtimeSubscriptionKey = useMemo(
     () =>
       roomThumbnails
@@ -283,6 +333,10 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
     [roomThumbnails]
   );
   const roomMapRealtimeChannels = useMemo(() => {
+    if (externalTargetUsername) {
+      return [];
+    }
+
     const channels = new Set<string>();
     if (!roomRealtimeSubscriptionKey) {
       return [];
@@ -308,10 +362,14 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
       }
     }
     return [...channels];
-  }, [roomRealtimeSubscriptionKey]);
+  }, [externalTargetUsername, roomRealtimeSubscriptionKey]);
 
   // 房间对象实时频道 (room: 频道)
   const roomObjectRealtimeChannels = useMemo(() => {
+    if (externalTargetUsername) {
+      return [];
+    }
+
     const channels = new Set<string>();
     if (!roomRealtimeSubscriptionKey) {
       return [];
@@ -337,7 +395,7 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
       }
     }
     return [...channels];
-  }, [roomRealtimeSubscriptionKey]);
+  }, [externalTargetUsername, roomRealtimeSubscriptionKey]);
 
   const realtimeChannels = useMemo(
     () => [...new Set([...runtimeRealtimeChannels, ...roomMapRealtimeChannels, ...roomObjectRealtimeChannels])],
@@ -392,7 +450,7 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
       rooms: groups.get(shardKey) ?? [],
     }));
   }, [roomThumbnails]);
-  const displayUsername = profile?.username ?? session.username;
+  const displayUsername = profile?.username ?? externalTargetUsername ?? session.username;
   const { data: allianceFullName } = useSWR(
     displayUsername ? ["loa-alliance", displayUsername.toLowerCase()] : null,
     () => fetchAllianceFullNameByPlayer(displayUsername),
@@ -489,9 +547,19 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
 
   useEffect(() => {
     setAvatarCandidateIndex(0);
-  }, [avatarCandidates.length, profile?.avatarUrl, profile?.username, session.baseUrl]);
+  }, [avatarCandidates.length, externalTargetUsername, profile?.avatarUrl, profile?.username, session.baseUrl]);
 
   useEffect(() => {
+    if (externalTargetUsername) {
+      setRuntimeMetrics({});
+    }
+  }, [externalTargetUsername]);
+
+  useEffect(() => {
+    if (realtimeChannels.length === 0) {
+      return undefined;
+    }
+
     const realtimeClient = new ScreepsRealtimeClient({
       baseUrl: session.baseUrl,
       token: session.token,
@@ -610,9 +678,20 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
     !data &&
       ((isLoading || isValidating) ? showDelayedLoading : Boolean(error && !shouldShowError))
   );
+  const guestHint =
+    session && !session.token.trim() && !externalTargetUsername
+      ? locale === "zh-CN"
+        ? "游客模式下请先在侧边栏搜索用户名，再查看公开用户页。"
+        : "In guest mode, search a username in the sidebar before opening a public profile."
+      : undefined;
 
   return (
     <section className="panel dashboard-panel">
+      {requiresPublicTarget ? (
+        <article className="card">
+          <p className="hint-text">{guestHint}</p>
+        </article>
+      ) : null}
       {shouldShowError ? <p className="error-text">{errorToMessage(error)}</p> : null}
 
       {shouldShowLoading ? (
@@ -668,61 +747,79 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
                   />
                 </div>
               </div>
-              <div className="profile-detail-grid">
-                <div className="profile-resource-grid">
-                  <MetricCell
-                    label={t("dashboard.credits")}
-                    value={formatNumber(profile?.resources.credits, 3, { fixed: true })}
-                    iconSrc="/screeps-market-svgs/resource-credits.svg"
-                    className="profile-resource-item profile-resource-item-credits"
-                    iconClassName="resource-credits"
-                  />
-                  <MetricCell
-                    label={t("dashboard.cpuUnlock")}
-                    value={formatNumber(profile?.resources.cpuUnlock)}
-                    iconSrc="/screeps-market-svgs/resource-cpu-unlock.svg"
-                    className="profile-resource-item profile-resource-item-cpuunlock"
-                    iconClassName="resource-cpu-unlock"
-                  />
-                  <MetricCell
-                    label={t("dashboard.pixels")}
-                    value={formatNumber(profile?.resources.pixels)}
-                    iconSrc="/screeps-market-svgs/resource-pixel.svg"
-                    className="profile-resource-item profile-resource-item-pixels"
-                    iconClassName="resource-pixel"
-                  />
-                  <MetricCell
-                    label={t("dashboard.accessKey")}
-                    value={accessKeyValue ?? "N/A"}
-                    iconSrc="/screeps-market-svgs/resource-access-key.svg"
-                    className="profile-resource-item profile-resource-item-access-key"
-                    iconClassName="resource-access-key"
-                  />
-                </div>
-
-                <div className="profile-growth-grid">
-                  <div className="progress-ring-grid progress-ring-grid-system">
-                    <CircularProgress
-                      label="CPU"
-                      percent={cpuPercent}
-                      valueText={formatPercent(cpuPercent)}
-                      subText={formatRatio(cpuUsed, cpuLimit)}
-                      ringColor={ringColors.cpu}
-                      size={ringSize}
-                      shrinkPercentSymbol
+              {!isPublicProfileView ? (
+                <div className="profile-detail-grid">
+                  <div className="profile-resource-grid">
+                    <MetricCell
+                      label={t("dashboard.credits")}
+                      value={formatCreditsValue(profile?.resources.credits)}
+                      iconSrc="/screeps-market-svgs/resource-credits.svg"
+                      className="profile-resource-item profile-resource-item-credits"
+                      iconClassName="resource-credits"
                     />
-                    <CircularProgress
-                      label="MEM"
-                      percent={memPercent}
-                      valueText={formatPercent(memPercent)}
-                      subText={formatMemoryRatio(memUsed, memLimit)}
-                      ringColor={ringColors.mem}
-                      size={ringSize}
-                      shrinkPercentSymbol
+                    <MetricCell
+                      label={t("dashboard.cpuUnlock")}
+                      value={formatNumber(profile?.resources.cpuUnlock)}
+                      iconSrc="/screeps-market-svgs/resource-cpu-unlock.svg"
+                      className="profile-resource-item profile-resource-item-cpuunlock"
+                      iconClassName="resource-cpu-unlock"
+                    />
+                    <MetricCell
+                      label={t("dashboard.pixels")}
+                      value={formatNumber(profile?.resources.pixels)}
+                      iconSrc="/screeps-market-svgs/resource-pixel.svg"
+                      className="profile-resource-item profile-resource-item-pixels"
+                      iconClassName="resource-pixel"
+                    />
+                    <MetricCell
+                      label={t("dashboard.accessKey")}
+                      value={accessKeyValue ?? "N/A"}
+                      iconSrc="/screeps-market-svgs/resource-access-key.svg"
+                      className="profile-resource-item profile-resource-item-access-key"
+                      iconClassName="resource-access-key"
                     />
                   </div>
+
+                  <div className="profile-growth-grid">
+                    <div className="profile-growth-circles">
+                      <div className="progress-ring-grid progress-ring-grid-system">
+                        <CircularProgress
+                          label="CPU"
+                          percent={cpuPercent}
+                          valueText={formatPercent(cpuPercent)}
+                          subText={formatRatio(cpuUsed, cpuLimit)}
+                          ringColor={ringColors.cpu}
+                          size={ringSize}
+                          shrinkPercentSymbol
+                        />
+                        <CircularProgress
+                          label="MEM"
+                          percent={memPercent}
+                          valueText={formatPercent(memPercent)}
+                          subText={formatMemoryRatio(memUsed, memLimit)}
+                          ringColor={ringColors.mem}
+                          size={ringSize}
+                          shrinkPercentSymbol
+                        />
+                      </div>
+                    </div>
+                    <div className="profile-growth-bars">
+                      <MetricBar
+                        className="metric-bar-cpu"
+                        label="CPU"
+                        value={formatPercent(cpuPercent)}
+                        percent={cpuPercent}
+                      />
+                      <MetricBar
+                        className="metric-bar-mem"
+                        label="MEM"
+                        value={formatPercent(memPercent)}
+                        percent={memPercent}
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           </article>
 
@@ -777,6 +874,7 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
                                 size={150}
                                 mapOverlay={roomOverlay}
                                 roomObjects={roomObjects}
+                                buildingColor={isPublicProfileView ? "#ff4d57" : undefined}
                               />
                             </Link>
                           );

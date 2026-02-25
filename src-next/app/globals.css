@@ -879,6 +879,57 @@ a {
   line-height: 1.25;
 }
 
+.nav-public-search {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(6, 6, 6, 0.9);
+}
+
+.nav-public-search-wrap {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-public-search-title {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.nav-public-search-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text-main);
+  padding: 7px 8px;
+  font-size: 0.74rem;
+  outline: none;
+}
+
+.nav-public-search-input:focus {
+  border-color: var(--accent);
+}
+
+.nav-public-search-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.nav-public-search-button {
+  width: 100%;
+  padding: 5px 6px;
+}
+
 .shell-content {
   min-width: 0;
   min-height: 0;
@@ -1141,9 +1192,13 @@ a {
   color: #ccbc30;
 }
 
+.profile-resource-grid .profile-resource-item-credits .metric-value .metric-value-decimal {
+  font-size: 0.86em;
+}
+
 .profile-resource-grid .metric-value {
   display: block;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 700;
   line-height: 1;
   text-align: right;
@@ -1158,9 +1213,8 @@ a {
 }
 
 .profile-resource-grid .metric-cell:last-child .metric-value {
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   max-width: 74%;
-  font-family: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
 }
 
 .profile-growth-grid {
@@ -1176,6 +1230,47 @@ a {
   align-self: start;
   container-type: inline-size;
   container-name: profile-rings;
+}
+
+.profile-growth-circles {
+  width: 100%;
+}
+
+.profile-growth-bars {
+  display: none;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profile-growth-bars .metric-bar {
+  gap: 4px;
+  border: 1px solid #222832;
+  border-radius: 6px;
+  background: #0a0d13;
+  padding: 6px 8px;
+}
+
+.profile-growth-bars .metric-bar-head {
+  font-size: 0.62rem;
+  letter-spacing: 0.03em;
+}
+
+.profile-growth-bars .metric-bar-head strong {
+  font-size: 0.72rem;
+}
+
+.profile-growth-bars .metric-track {
+  height: 5px;
+  background: #111824;
+}
+
+.profile-growth-bars .metric-bar-cpu .metric-fill {
+  background: linear-gradient(90deg, #6e8a3f 0%, #b9d869 100%);
+}
+
+.profile-growth-bars .metric-bar-mem .metric-fill {
+  background: linear-gradient(90deg, #3f5f90 0%, #8ab2ff 100%);
 }
 
 .progress-ring-grid {
@@ -1214,7 +1309,9 @@ a {
   color: #e5c57e;
   font-weight: 700;
   letter-spacing: 0.03em;
-  line-height: 1.04;
+  line-height: 1.14;
+  padding-block: 1px 2px;
+  display: block;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -1529,7 +1626,7 @@ a {
     auto-fill,
     minmax(var(--room-thumb-card-width), var(--room-thumb-card-width))
   );
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .room-thumb-card {
@@ -2001,11 +2098,43 @@ a {
 }
 
 .resources-shard-head {
-  display: flex;
+  display: block;
+}
+
+.resources-shard-toggle {
+  width: 100%;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.resources-shard-toggle:hover {
+  border-color: #2b2b2b;
+  background: #0b0b0b;
+}
+
+.resources-shard-toggle:focus-visible {
+  outline: none;
+  border-color: #3a3a3a;
+  box-shadow: 0 0 0 1px #3a3a3a;
+}
+
+.resources-shard-toggle-tail {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .resources-shard-head h2 {
@@ -2018,6 +2147,23 @@ a {
 .resources-shard-meta {
   color: var(--text-soft);
   font-size: 0.66rem;
+}
+
+.resources-shard-caret {
+  width: 8px;
+  height: 8px;
+  border-right: 1.8px solid #6f6f6f;
+  border-bottom: 1.8px solid #6f6f6f;
+  transform: rotate(45deg);
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.resources-shard-toggle:hover .resources-shard-caret {
+  border-color: #b6b6b6;
+}
+
+.resources-shard-caret.collapsed {
+  transform: rotate(-45deg);
 }
 
 .rr-section-stack {
@@ -2212,7 +2358,7 @@ a {
 }
 
 .rr-tooltip-multi {
-  width: min(342px, calc(100vw - 24px));
+  width: min(520px, calc(100vw - 24px));
 }
 
 .rr-number-wrap:hover .rr-tooltip,
@@ -2246,9 +2392,35 @@ a {
 }
 
 .rr-room-list-multi {
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  column-gap: 10px;
-  row-gap: 4px;
+  display: block;
+  column-count: 4;
+  column-gap: 8px;
+}
+
+.rr-room-list-multi .rr-room-item {
+  margin-bottom: 4px;
+  break-inside: avoid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.62rem;
+}
+
+.rr-room-list-multi .rr-room-item span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rr-room-list-multi .rr-room-item span:last-child {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .rr-room-list-multi {
+    column-count: 2;
+  }
 }
 
 .rr-room-item {
@@ -3765,7 +3937,7 @@ a {
 }
 
 .market-v2-table .market-v2-col-price {
-  width: 156px;
+  width: 108px;
 }
 
 .market-v2-table .market-v2-col-amount {
@@ -3915,6 +4087,10 @@ a {
     display: inline-flex;
   }
 
+  .topbar-brand {
+    display: none;
+  }
+
   .card-grid {
     grid-template-columns: 1fr;
   }
@@ -3964,6 +4140,10 @@ a {
   .market-v2-orders-grid {
     grid-template-columns: 1fr;
     min-width: 0;
+  }
+
+  .profile-growth-grid {
+    justify-content: stretch;
   }
 
   .chat-conversation-layout {
@@ -4177,6 +4357,14 @@ a {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .nav-public-search {
+    grid-column: 1 / -1;
+  }
+
+  .nav-public-search-wrap {
+    grid-column: 1 / -1;
+  }
+
   .nav-link {
     padding: 8px 6px;
   }
@@ -4197,16 +4385,38 @@ a {
   }
 
   .profile-identity {
-    gap: 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "avatar name"
+      "rings rings";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 8px;
+  }
+
+  .profile-identity .avatar-shell {
+    grid-area: avatar;
   }
 
   .profile-name-wrap {
+    grid-area: name;
+    min-width: 0;
+    align-items: center;
+  }
+
+  .profile-name-wrap > div {
     min-width: 0;
   }
 
   .profile-top-rings {
-    width: min(100%, 220px);
+    grid-area: rings;
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+    justify-items: center;
   }
 
   .avatar-shell {
@@ -4224,13 +4434,30 @@ a {
   }
 
   .profile-resource-grid .metric-value {
+    font-size: 0.7rem;
     max-width: 100%;
+  }
+
+  .profile-resource-grid .metric-cell:last-child .metric-value {
+    font-size: 0.7rem;
+  }
+
+  .profile-resource-grid .profile-resource-item-credits .metric-value .metric-value-decimal {
+    font-size: 0.82em;
   }
 
   .profile-growth-grid {
     width: 100%;
     padding: 0;
     justify-content: flex-end;
+  }
+
+  .profile-growth-circles {
+    display: none;
+  }
+
+  .profile-growth-bars {
+    display: grid;
   }
 
   .progress-ring-grid.progress-ring-grid-system {
@@ -4334,6 +4561,43 @@ a {
     min-width: 0;
   }
 
+  .market-v2-order-section .market-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .market-v2-table th,
+  .market-v2-table td {
+    padding: 5px 4px;
+    font-size: 0.68rem;
+  }
+
+  .market-v2-table .market-v2-col-price {
+    width: 72px;
+  }
+
+  .market-v2-table .market-v2-col-amount {
+    width: 64px;
+  }
+
+  .market-v2-table .market-v2-col-room {
+    width: 60px;
+    max-width: 60px;
+  }
+
+  .market-v2-table .market-v2-col-action {
+    width: 66px;
+  }
+
+  .market-v2-order-action {
+    width: auto;
+    min-width: 52px;
+    max-width: 60px;
+    padding: 3px 6px;
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+  }
+
   .market-v2-card-code {
     font-size: 1.12rem;
   }
@@ -4434,6 +4698,14 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .nav-public-search {
+    grid-column: 1 / -1;
+  }
+
+  .nav-public-search-wrap {
+    grid-column: 1 / -1;
+  }
+
   .topbar-right {
     gap: 4px;
   }
@@ -4449,8 +4721,24 @@ a {
   }
 
   .profile-identity {
-    flex-wrap: wrap;
-    align-items: flex-start;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "avatar"
+      "name"
+      "rings";
+    justify-items: center;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .profile-name-wrap {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .profile-subline {
+    text-align: center;
   }
 
   .profile-detail-grid {
@@ -4479,15 +4767,35 @@ a {
   }
 
   .profile-resource-grid .metric-value {
-    font-size: 0.75rem;
+    font-size: 0.64rem;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .profile-resource-grid .metric-cell:last-child .metric-value {
+    font-size: 0.64rem;
+  }
+
+  .profile-resource-grid .profile-resource-item-credits .metric-value .metric-value-decimal {
+    font-size: 0.8em;
+  }
+
   .profile-growth-grid {
     width: 100%;
+  }
+
+  .profile-growth-bars .metric-bar {
+    padding: 5px 6px;
+  }
+
+  .profile-growth-bars .metric-bar-head {
+    font-size: 0.58rem;
+  }
+
+  .profile-growth-bars .metric-bar-head strong {
+    font-size: 0.66rem;
   }
 
   .profile-top-rings {
@@ -4541,6 +4849,36 @@ a {
   .market-v2-orders-grid {
     grid-template-columns: 1fr;
     min-width: 0;
+  }
+
+  .market-v2-table th,
+  .market-v2-table td {
+    padding: 4px 3px;
+    font-size: 0.64rem;
+  }
+
+  .market-v2-table .market-v2-col-price {
+    width: 64px;
+  }
+
+  .market-v2-table .market-v2-col-amount {
+    width: 58px;
+  }
+
+  .market-v2-table .market-v2-col-room {
+    width: 52px;
+    max-width: 52px;
+  }
+
+  .market-v2-table .market-v2-col-action {
+    width: 60px;
+  }
+
+  .market-v2-order-action {
+    min-width: 48px;
+    max-width: 56px;
+    font-size: 0.6rem;
+    padding: 2px 5px;
   }
 
   .market-v2-card-code {

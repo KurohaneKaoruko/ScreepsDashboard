@@ -4,8 +4,8 @@
   "version": "0.1.0-beta4",
   "identifier": "com.screeps.dashboard",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "npm run dev -- --port 38127",
+    "devUrl": "http://localhost:38127",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../src-next/out"
   },

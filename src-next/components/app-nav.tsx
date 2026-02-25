@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { Fragment, type FormEvent, useState } from "react";
 import { useI18n } from "../lib/i18n/use-i18n";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -24,6 +25,14 @@ interface NavItem {
 
 interface AppNavProps {
   onNavigate?: () => void;
+}
+
+function normalizePublicUsername(value: string): string | undefined {
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function isActivePath(pathname: string, href: string): boolean {
@@ -122,12 +131,34 @@ function NavIcon({ icon }: { icon: NavItem["icon"] }) {
 
 export function AppNav({ onNavigate }: AppNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const session = useAuthStore((state) => state.session);
   const { t, locale } = useI18n();
+  const isGuestSession = Boolean(session && !session.token.trim());
+  const [publicSearchUsername, setPublicSearchUsername] = useState("");
   const resourcesLabel = t("nav.resourcesLabel");
-  const mapLabel = locale === "zh-CN" ? "\u5730\u56fe" : "Map";
+  const mapLabel = t("nav.mapLabel");
   const marketLabel = locale === "zh-CN" ? "\u5546\u5e97" : "Market";
   const mailLabel = locale === "zh-CN" ? "\u6d88\u606f" : "Messages";
+  const isPublicSearchDisabled = !normalizePublicUsername(publicSearchUsername);
+
+  function navigateToPublicPage(targetPath: "/user" | "/resources") {
+    const targetUsername = normalizePublicUsername(publicSearchUsername);
+    if (!targetUsername) {
+      return;
+    }
+
+    const search = new URLSearchParams({
+      target: targetUsername,
+    });
+    router.push(`${targetPath}?${search.toString()}`);
+    onNavigate?.();
+  }
+
+  function handlePublicSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    navigateToPublicPage("/user");
+  }
 
   const navItems: NavItem[] = session
     ? [
@@ -161,18 +192,22 @@ export function AppNav({ onNavigate }: AppNavProps) {
           meta: "/market",
           icon: "market",
         },
-        {
-          href: "/messages",
-          label: mailLabel,
-          meta: "/messages",
-          icon: "mail",
-        },
-        {
-          href: "/console",
-          label: t("nav.consoleLabel"),
-          meta: "/console",
-          icon: "console",
-        },
+        ...(!isGuestSession
+          ? [
+              {
+                href: "/messages",
+                label: mailLabel,
+                meta: "/messages",
+                icon: "mail",
+              } satisfies NavItem,
+              {
+                href: "/console",
+                label: t("nav.consoleLabel"),
+                meta: "/console",
+                icon: "console",
+              } satisfies NavItem,
+            ]
+          : []),
         {
           href: "/rankings",
           label: t("nav.rankingsLabel"),
@@ -213,20 +248,54 @@ export function AppNav({ onNavigate }: AppNavProps) {
         const active = isActivePath(pathname, item.href);
 
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={active ? "nav-link active" : "nav-link"}
-            onClick={onNavigate}
-          >
-            <span className="nav-main">
-              <NavIcon icon={item.icon} />
-              <span className="nav-label">{item.label}</span>
-            </span>
-            <span className="nav-desc">{item.meta}</span>
-          </Link>
+          <Fragment key={`${item.href}:${item.icon}`}>
+            <Link
+              href={item.href}
+              className={active ? "nav-link active" : "nav-link"}
+              onClick={onNavigate}
+            >
+              <span className="nav-main">
+                <NavIcon icon={item.icon} />
+                <span className="nav-label">{item.label}</span>
+              </span>
+              <span className="nav-desc">{item.meta}</span>
+            </Link>
+          </Fragment>
         );
       })}
+
+      {session ? (
+        <div className="nav-public-search-wrap">
+          <form className="nav-public-search" onSubmit={handlePublicSearchSubmit}>
+            <p className="nav-public-search-title">{t("nav.lookupTitle")}</p>
+            <input
+              className="nav-public-search-input"
+              type="text"
+              value={publicSearchUsername}
+              onChange={(event) => setPublicSearchUsername(event.currentTarget.value)}
+              placeholder={t("nav.lookupPlaceholder")}
+              aria-label={t("nav.lookupPlaceholder")}
+            />
+            <div className="nav-public-search-actions">
+              <button
+                className="tiny-button nav-public-search-button"
+                disabled={isPublicSearchDisabled}
+                type="submit"
+              >
+                {t("nav.lookupUserAction")}
+              </button>
+              <button
+                className="tiny-button nav-public-search-button"
+                disabled={isPublicSearchDisabled}
+                onClick={() => navigateToPublicPage("/resources")}
+                type="button"
+              >
+                {t("nav.lookupResourcesAction")}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </nav>
   );
 }

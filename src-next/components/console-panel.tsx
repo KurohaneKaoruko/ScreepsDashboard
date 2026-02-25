@@ -341,10 +341,15 @@ function extractAuthUserId(payload: unknown, raw: string): string | undefined {
 }
 
 export function ConsolePanel() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const session = useAuthStore((state) => state.session);
   const patchSession = useAuthStore((state) => state.patchSession);
   const consoleSendMode = useSettingsStore((state) => state.consoleSendMode);
+  const isGuestSession = Boolean(session && !session.token.trim());
+  const guestHint =
+    locale === "zh-CN"
+      ? "游客模式下无法使用控制台，请登录可用 Token 的账号。"
+      : "Console is unavailable in guest mode. Please sign in with a token account.";
 
   const [selectedShard, setSelectedShard] = useState<(typeof SHARD_OPTIONS)[number]>("--");
   const [commandInput, setCommandInput] = useState(DEFAULT_CONSOLE_DRAFT);
@@ -377,20 +382,20 @@ export function ConsolePanel() {
     ? `${session.baseUrl}|${session.username}|${session.token}|${session.userId ?? ""}|${session.accountId ?? ""}`
     : "";
   const storageKey = useMemo(() => {
-    if (!session) {
+    if (!session || isGuestSession) {
       return "";
     }
     return buildConsoleLocalStateKey(session.baseUrl, session.username);
-  }, [session]);
+  }, [isGuestSession, session]);
   const channels = useMemo(() => {
-    if (!session) {
+    if (!session || isGuestSession) {
       return [];
     }
     return buildConsoleRealtimeChannels(session.username, session.userId ?? session.username);
-  }, [session]);
+  }, [isGuestSession, session]);
 
   useEffect(() => {
-    if (!session || session.userId) {
+    if (!session || isGuestSession || session.userId) {
       return;
     }
 
@@ -429,7 +434,7 @@ export function ConsolePanel() {
     return () => {
       cancelled = true;
     };
-  }, [patchSession, session]);
+  }, [isGuestSession, patchSession, session]);
 
   const visibleRecords = useMemo(() => {
     const normalizedKeyword = keywordFilter.trim().toLowerCase();
@@ -501,7 +506,7 @@ export function ConsolePanel() {
     pausedBufferRef.current = [];
     setConnectionState("idle");
 
-    if (!session) {
+    if (!session || isGuestSession) {
       return;
     }
 
@@ -583,7 +588,7 @@ export function ConsolePanel() {
       pausedBufferRef.current = [];
       setConnectionState("closed");
     };
-  }, [channels, session, sessionKey]);
+  }, [channels, isGuestSession, session, sessionKey]);
 
   useEffect(() => {
     if (isPaused) {
@@ -658,7 +663,7 @@ export function ConsolePanel() {
   }
 
   async function handleSendCommand() {
-    if (!session) {
+    if (!session || isGuestSession) {
       return;
     }
     setErrorMessage(null);
@@ -815,6 +820,21 @@ export function ConsolePanel() {
       ...current,
       [kind]: !current[kind],
     }));
+  }
+
+  if (isGuestSession) {
+    return (
+      <section className="panel dashboard-panel console-panel console-terminal-panel">
+        <header className="dashboard-header">
+          <div>
+            <h1 className="page-title">{t("console.title")}</h1>
+          </div>
+        </header>
+        <article className="card">
+          <p className="hint-text">{guestHint}</p>
+        </article>
+      </section>
+    );
   }
 
   return (

@@ -10,6 +10,7 @@ interface TerrainThumbnailProps {
   size?: number;
   mapOverlay?: RoomMapOverlay;
   roomObjects?: RoomObjectSummary[];
+  buildingColor?: string;
 }
 
 const GRID_SIZE = 50;
@@ -18,8 +19,9 @@ const SOURCE_COLOR = "#edc95a";
 const MINERAL_COLOR = "#ffffff";
 const ROAD_COLOR = "rgb(60, 60, 60)";
 const WALL_COLOR = "#060606";
+const EXCLUDED_THUMBNAIL_OBJECT_TYPES = new Set(["ruin"]);
 
-export function resolveRoomObjectColor(type: string): string {
+export function resolveRoomObjectColor(type: string, buildingColor = BUILDING_COLOR): string {
   if (type === "source") {
     return SOURCE_COLOR;
   }
@@ -32,7 +34,7 @@ export function resolveRoomObjectColor(type: string): string {
   if (type === "wall" || type === "constructedWall") {
     return WALL_COLOR;
   }
-  return BUILDING_COLOR;
+  return buildingColor;
 }
 
 function decodeTerrain(encoded: string): number[] | null {
@@ -76,7 +78,8 @@ function drawPoints(
 function drawMapOverlay(
   ctx: CanvasRenderingContext2D,
   overlay: RoomMapOverlay,
-  scale: number
+  scale: number,
+  buildingColor: string
 ): void {
   drawPoints(ctx, overlay.roads, scale, ROAD_COLOR);
   drawPoints(ctx, overlay.sources, scale, SOURCE_COLOR);
@@ -84,8 +87,8 @@ function drawMapOverlay(
   drawPoints(ctx, overlay.portals, scale, "#9e6eff");
   drawPoints(ctx, overlay.powerBanks, scale, "#ff6f75");
   drawPoints(ctx, overlay.keepers, scale, "#f48d51");
-  drawPoints(ctx, overlay.userPoints, scale, BUILDING_COLOR);
-  drawPoints(ctx, overlay.controllers, scale, BUILDING_COLOR);
+  drawPoints(ctx, overlay.userPoints, scale, buildingColor);
+  drawPoints(ctx, overlay.controllers, scale, buildingColor);
 }
 
 function objectLayer(type: string): number {
@@ -113,7 +116,8 @@ function objectLayer(type: string): number {
 function drawRoomObjects(
   ctx: CanvasRenderingContext2D,
   roomObjects: RoomObjectSummary[],
-  scale: number
+  scale: number,
+  buildingColor: string
 ): void {
   if (roomObjects.length === 0) {
     return;
@@ -130,7 +134,7 @@ function drawRoomObjects(
   for (const object of sorted) {
     const x = Math.max(0, Math.min(GRID_SIZE - 1, object.x));
     const y = Math.max(0, Math.min(GRID_SIZE - 1, object.y));
-    const color = resolveRoomObjectColor(object.type);
+    const color = resolveRoomObjectColor(object.type, buildingColor);
 
     const compactMarker = object.type === "creep" || object.type === "powerCreep";
     const pixelSize = compactMarker ? Math.max(1, scale - 1) : scale;
@@ -147,13 +151,16 @@ export function TerrainThumbnail({
   size = 120,
   mapOverlay,
   roomObjects,
+  buildingColor,
 }: TerrainThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainValues = useMemo(() => (encoded ? decodeTerrain(encoded) : null), [encoded]);
+  const resolvedBuildingColor = buildingColor?.trim() ? buildingColor : BUILDING_COLOR;
   const visibleRoomObjects = useMemo(
     () =>
       (roomObjects ?? []).filter(
         (item) =>
+          !EXCLUDED_THUMBNAIL_OBJECT_TYPES.has(item.type.toLowerCase()) &&
           Number.isFinite(item.x) &&
           Number.isFinite(item.y) &&
           item.x >= 0 &&
@@ -206,13 +213,13 @@ export function TerrainThumbnail({
     // Avoid color contamination: when full room objects are available, do not paint realtime
     // overlay points on top of the same cells.
     if (mapOverlay && visibleRoomObjects.length === 0) {
-      drawMapOverlay(ctx, mapOverlay, scale);
+      drawMapOverlay(ctx, mapOverlay, scale, resolvedBuildingColor);
     }
 
     if (visibleRoomObjects.length > 0) {
-      drawRoomObjects(ctx, visibleRoomObjects, scale);
+      drawRoomObjects(ctx, visibleRoomObjects, scale, resolvedBuildingColor);
     }
-  }, [mapOverlay, shouldRenderCanvas, size, terrainValues, visibleRoomObjects]);
+  }, [mapOverlay, resolvedBuildingColor, shouldRenderCanvas, size, terrainValues, visibleRoomObjects]);
 
   if (!shouldRenderCanvas) {
     return (

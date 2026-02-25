@@ -236,6 +236,41 @@ interface RendererUsersFromOfficialResult {
   playerId?: string;
 }
 
+function buildUserIdentityDirectory(roomObjects: RoomObjectSummary[] | undefined): Map<string, string> {
+  const directory = new Map<string, string>();
+  for (const object of roomObjects ?? []) {
+    const owner = toNonEmptyString(object.owner);
+    const user = toNonEmptyString(object.user);
+
+    if (owner) {
+      directory.set(owner, owner);
+    }
+    if (user && owner) {
+      directory.set(user, owner);
+    } else if (user) {
+      directory.set(user, user);
+    }
+  }
+  return directory;
+}
+
+function buildObjectUserByTypeAndPosition(
+  roomObjects: RoomObjectSummary[] | undefined
+): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const object of roomObjects ?? []) {
+    const user = toNonEmptyString(object.user) ?? toNonEmptyString(object.owner);
+    const type = toNonEmptyString(normalizeObjectType(object.type));
+    const x = toGridCoordinate(object.x);
+    const y = toGridCoordinate(object.y);
+    if (!user || !type || x === null || y === null) {
+      continue;
+    }
+    lookup.set(`${type}:${x}:${y}`, user);
+  }
+  return lookup;
+}
+
 function addRendererUserAlias(
   sink: Record<string, RendererUserState>,
   alias: string | undefined,
@@ -309,11 +344,13 @@ function resolveCurrentPlayerFromOfficialUsers(
 
 function buildRendererUsersFromOfficial(
   officialUsers: Record<string, OfficialRoomUserRecord> | undefined,
+  roomObjects: RoomObjectSummary[] | undefined,
   currentUsername?: string,
   currentUserId?: string
 ): RendererUsersFromOfficialResult {
   const users: Record<string, RendererUserState> = {};
   let playerId = toNonEmptyString(currentUserId);
+  const identityDirectory = buildUserIdentityDirectory(roomObjects);
 
   if (!officialUsers) {
     return {
@@ -323,7 +360,6 @@ function buildRendererUsersFromOfficial(
   }
 
   for (const [key, userRecord] of Object.entries(officialUsers)) {
-    const username = toNonEmptyString(userRecord.username) ?? key;
     const userId =
       toNonEmptyString(userRecord._id) ??
       toNonEmptyString(userRecord.id) ??
@@ -331,20 +367,27 @@ function buildRendererUsersFromOfficial(
       toNonEmptyString(key);
     const isCurrent =
       isCurrentUserIdentity(userId, currentUsername, currentUserId) ||
-      isCurrentUserIdentity(username, currentUsername, currentUserId);
+      isCurrentUserIdentity(toNonEmptyString(userRecord.username) ?? key, currentUsername, currentUserId);
     if (!playerId && isCurrent && userId) {
       playerId = userId;
     }
 
+    const resolvedUsername =
+      toNonEmptyString(userRecord.username) ??
+      (userId ? identityDirectory.get(userId) : undefined) ??
+      identityDirectory.get(key) ??
+      (isCurrent ? toNonEmptyString(currentUsername) : undefined) ??
+      key;
+
     const rendererUser: RendererUserState = {
       ...userRecord,
-      username,
+      username: resolvedUsername,
       color: isCurrent ? OWNED_PLAYER_COLOR : HOSTILE_PLAYER_COLOR,
     };
 
     addRendererUserAlias(users, key, rendererUser);
     addRendererUserAlias(users, userId, rendererUser);
-    addRendererUserAlias(users, username, rendererUser);
+    addRendererUserAlias(users, resolvedUsername, rendererUser);
   }
 
   return {
@@ -509,13 +552,15 @@ function decodeTerrainToObjects(encoded: string | undefined, roomName: string): 
 
 function buildRendererObjectsFromOfficial(
   roomName: string,
-  officialObjects: OfficialRoomObjectRecord[] | undefined
+  officialObjects: OfficialRoomObjectRecord[] | undefined,
+  roomObjects: RoomObjectSummary[] | undefined
 ): RendererObjectState[] {
   if (!officialObjects?.length) {
     return [];
   }
 
   const rendererObjects: RendererObjectState[] = [];
+  const fallbackObjectUsers = buildObjectUserByTypeAndPosition(roomObjects);
   for (const item of officialObjects) {
     const x = toIntegerGridCoordinate(item.x);
     const y = toIntegerGridCoordinate(item.y);
@@ -538,7 +583,8 @@ function buildRendererObjectsFromOfficial(
     }
     const room = resolveObjectRoomNameFromOfficial(item, roomName);
     const objectId = resolveObjectIdFromOfficial(item, room, rawType, x, y);
-    const resolvedUser = resolveOfficialObjectUser(item);
+    const resolvedUser =
+      resolveOfficialObjectUser(item) ?? fallbackObjectUsers.get(`${normalizedType}:${x}:${y}`);
     const rawStore = toRecord(item.store);
     const rawStoreCapacityResource = toRecord(item.storeCapacityResource);
     const energy = toFiniteNumber(item.energy);
@@ -999,23 +1045,30 @@ export function RoomGameplayMap({
     [externalGameTime, roomObjects, roomName, roomShard]
   );
   const terrainObjects = useMemo(() => decodeTerrainToObjects(encoded, roomName), [encoded, roomName]);
+  const fallbackRendererUsers = useMemo(
+    () => buildRendererUsers(roomObjects, currentUsername, currentUserId),
+    [currentUserId, currentUsername, roomObjects]
+  );
   const rendererObjects = useMemo(() => {
-    const official = buildRendererObjectsFromOfficial(roomName, officialObjects);
+    const official = buildRendererObjectsFromOfficial(roomName, officialObjects, roomObjects);
     if (official.length > 0) {
       return official;
     }
     return buildRendererObjects(roomName, roomObjects, gameTime);
   }, [gameTime, officialObjects, roomName, roomObjects]);
   const officialUsersBundle = useMemo(
-    () => buildRendererUsersFromOfficial(officialUsers, currentUsername, currentUserId),
-    [currentUserId, currentUsername, officialUsers]
+    () => buildRendererUsersFromOfficial(officialUsers, roomObjects, currentUsername, currentUserId),
+    [currentUserId, currentUsername, officialUsers, roomObjects]
   );
   const rendererUsers = useMemo(() => {
     if (Object.keys(officialUsersBundle.users).length > 0) {
-      return officialUsersBundle.users;
+      return {
+        ...fallbackRendererUsers,
+        ...officialUsersBundle.users,
+      };
     }
-    return buildRendererUsers(roomObjects, currentUsername, currentUserId);
-  }, [currentUserId, currentUsername, officialUsersBundle.users, roomObjects]);
+    return fallbackRendererUsers;
+  }, [fallbackRendererUsers, officialUsersBundle.users]);
   const rendererPlayer = useMemo(
     () =>
       officialUsersBundle.playerId ??

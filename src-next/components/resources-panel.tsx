@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
 import {
@@ -51,6 +52,7 @@ interface ResourceColumnData {
 
 interface ShardResourceBlock {
   shardKey: string;
+  isAggregate?: boolean;
   roomCount: number;
   baseItems: ResourceTileData[];
   compressedItems: ResourceTileData[];
@@ -185,6 +187,7 @@ const COMMODITY_COLUMN_DEFS: readonly ResourceColumnDef[] = [
 
 const EMPTY_ROOMS: readonly RoomSummary[] = [];
 const EMPTY_ROOM_OBJECTS_BY_KEY: Record<string, RoomObjectSummary[]> = {};
+const ALL_SHARD_KEY = "__all__";
 
 const COLOR_BLUE = "#4ca7e5";
 const COLOR_YELLOW = "#f7d492";
@@ -330,11 +333,36 @@ function getResourceAccentColor(resourceType: string): string {
   return RESOURCE_COLOR_MAP.get(code) ?? COLOR_NEUTRAL;
 }
 
+function normalizeTargetUsername(value: string | null): string | undefined {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized;
+}
+
 export function ResourcesPanel() {
   const { t, locale } = useI18n();
   const session = useAuthStore((state) => state.session);
+  const searchParams = useSearchParams();
   const refreshIntervalMs = useSettingsStore((state) => state.refreshIntervalMs);
+  const [collapsedShardMap, setCollapsedShardMap] = useState<Record<string, boolean>>({});
   const isZh = locale === "zh-CN";
+  const requestedTargetUsername = useMemo(
+    () => normalizeTargetUsername(searchParams.get("target")),
+    [searchParams]
+  );
+  const isGuestSession = Boolean(session && !session.token.trim());
+  const externalTargetUsername = useMemo(() => {
+    if (!session || !requestedTargetUsername) {
+      return undefined;
+    }
+    if (requestedTargetUsername.toLowerCase() === session.username.trim().toLowerCase()) {
+      return undefined;
+    }
+    return requestedTargetUsername;
+  }, [requestedTargetUsername, session]);
+  const requiresPublicTarget = Boolean(isGuestSession && !externalTargetUsername);
 
   const {
     data: dashboardData,
@@ -342,14 +370,20 @@ export function ResourcesPanel() {
     isLoading: dashboardLoading,
     isValidating: dashboardValidating,
   } = useSWR(
-    session
-      ? ["resources-dashboard", session.baseUrl, session.token, session.verifiedAt]
+    session && !requiresPublicTarget
+      ? [
+          "resources-dashboard",
+          session.baseUrl,
+          session.token,
+          session.verifiedAt,
+          externalTargetUsername ?? "",
+        ]
       : null,
     () => {
       if (!session) {
         return Promise.reject(new Error("missing session"));
       }
-      return fetchDashboardSnapshot(session);
+      return fetchDashboardSnapshot(session, { targetUsername: externalTargetUsername });
     },
     {
       refreshInterval: refreshIntervalMs,
@@ -360,6 +394,7 @@ export function ResourcesPanel() {
   );
 
   const rooms = dashboardData?.rooms ?? EMPTY_ROOMS;
+  const displayUsername = dashboardData?.profile.username ?? externalTargetUsername ?? session?.username;
   const roomSubscriptionKey = useMemo(
     () =>
       rooms
@@ -381,6 +416,7 @@ export function ResourcesPanel() {
           session.baseUrl,
           session.token,
           session.verifiedAt,
+          externalTargetUsername ?? "",
           roomSubscriptionKey,
         ]
       : null,
@@ -469,12 +505,9 @@ export function ResourcesPanel() {
 
     const allResourceTypes = [...allResourceCodes].sort(compareResourceCode);
     const result: ShardResourceBlock[] = [];
+    const sortedShardKeys = sortShards(shardDataByKey.keys());
 
-    for (const shardKey of sortShards(shardDataByKey.keys())) {
-      const shardData = shardDataByKey.get(shardKey);
-      if (!shardData) {
-        continue;
-      }
+    function buildShardBlock(shardKey: string, shardData: MutableShardData): ShardResourceBlock {
 
       const tileByCode = new Map<string, ResourceTileData>();
       for (const resourceType of allResourceTypes) {
@@ -538,7 +571,7 @@ export function ResourcesPanel() {
         .map((resourceType) => tileByCode.get(getResourceMeta(resourceType).code))
         .filter((item): item is ResourceTileData => Boolean(item));
 
-      result.push({
+      return {
         shardKey,
         roomCount: shardData.roomNames.size,
         baseItems,
@@ -546,6 +579,55 @@ export function ResourcesPanel() {
         boostColumns,
         commodityColumns,
         otherItems,
+      };
+    }
+
+    for (const shardKey of sortedShardKeys) {
+      const shardData = shardDataByKey.get(shardKey);
+      if (!shardData) {
+        continue;
+      }
+      result.push(buildShardBlock(shardKey, shardData));
+    }
+
+    if (result.length > 1) {
+      const aggregateData: MutableShardData = {
+        roomNames: new Set<string>(),
+        resourceTotals: new Map<string, number>(),
+        resourceRooms: new Map<string, Map<string, number>>(),
+      };
+
+      for (const shardKey of sortedShardKeys) {
+        const shardData = shardDataByKey.get(shardKey);
+        if (!shardData) {
+          continue;
+        }
+
+        for (const roomName of shardData.roomNames) {
+          aggregateData.roomNames.add(`${shardKey}/${roomName}`);
+        }
+
+        for (const [resourceType, amount] of shardData.resourceTotals.entries()) {
+          aggregateData.resourceTotals.set(
+            resourceType,
+            (aggregateData.resourceTotals.get(resourceType) ?? 0) + amount
+          );
+        }
+
+        for (const [resourceType, roomTotals] of shardData.resourceRooms.entries()) {
+          const aggregateRoomTotals =
+            aggregateData.resourceRooms.get(resourceType) ?? new Map<string, number>();
+          for (const [roomName, amount] of roomTotals.entries()) {
+            const roomLabel = `${shardKey}/${roomName}`;
+            aggregateRoomTotals.set(roomLabel, (aggregateRoomTotals.get(roomLabel) ?? 0) + amount);
+          }
+          aggregateData.resourceRooms.set(resourceType, aggregateRoomTotals);
+        }
+      }
+
+      result.unshift({
+        ...buildShardBlock(ALL_SHARD_KEY, aggregateData),
+        isAggregate: true,
       });
     }
 
@@ -555,9 +637,33 @@ export function ResourcesPanel() {
   const isLoading = !dashboardData && dashboardLoading;
   const isSyncing = dashboardValidating || roomObjectsValidating || roomObjectsLoading;
   const dataError = dashboardError ?? roomObjectsError;
+  const actualShardCount = shardBlocks.reduce(
+    (count, shardBlock) => count + (shardBlock.isAggregate ? 0 : 1),
+    0
+  );
 
   if (!session) {
     return null;
+  }
+
+  if (requiresPublicTarget) {
+    const guestHint =
+      locale === "zh-CN"
+        ? "游客模式下请先在侧边栏搜索用户名，再查看该用户资源。"
+        : "In guest mode, search a username in the sidebar before opening resources.";
+    return (
+      <section className="panel resources-panel">
+        <div className="dashboard-header">
+          <div className="resources-header-copy">
+            <h1 className="page-title">{t("resources.title")}</h1>
+            <p className="resources-subtitle">{t("resources.subtitle")}</p>
+          </div>
+        </div>
+        <article className="card">
+          <p className="hint-text">{guestHint}</p>
+        </article>
+      </section>
+    );
   }
 
   const sectionTitle = {
@@ -611,6 +717,13 @@ export function ResourcesPanel() {
     );
   };
 
+  function toggleShardCollapse(shardKey: string) {
+    setCollapsedShardMap((current) => ({
+      ...current,
+      [shardKey]: !current[shardKey],
+    }));
+  }
+
   return (
     <section className="panel resources-panel">
       <div className="dashboard-header">
@@ -619,11 +732,16 @@ export function ResourcesPanel() {
           <p className="resources-subtitle">{t("resources.subtitle")}</p>
         </div>
         <div className="resources-meta-row">
+          {displayUsername ? (
+            <span className="entity-chip">
+              {t("dashboard.username")}: {displayUsername}
+            </span>
+          ) : null}
           <span className="entity-chip">
             {t("dashboard.rooms")}: {rooms.length}
           </span>
           <span className="entity-chip">
-            {t("resources.shard")}: {shardBlocks.length}
+            {t("resources.shard")}: {actualShardCount}
           </span>
           <span className="entity-chip">{isSyncing ? t("common.syncing") : t("common.idle")}</span>
         </div>
@@ -650,15 +768,34 @@ export function ResourcesPanel() {
           {shardBlocks.map((shardBlock) => (
             <article className="card resources-shard-card" key={shardBlock.shardKey}>
               <div className="resources-shard-head">
-                <h2>
-                  {t("resources.shard")} {shardBlock.shardKey}
-                </h2>
-                <span className="resources-shard-meta">
-                  {shardBlock.roomCount} {t("dashboard.rooms")}
-                </span>
+                <button
+                  aria-expanded={!collapsedShardMap[shardBlock.shardKey]}
+                  className="resources-shard-toggle"
+                  onClick={() => toggleShardCollapse(shardBlock.shardKey)}
+                  type="button"
+                >
+                  <h2>
+                    {t("resources.shard")}{" "}
+                    {shardBlock.isAggregate ? t("resources.shardAll") : shardBlock.shardKey}
+                  </h2>
+                  <span className="resources-shard-toggle-tail">
+                    <span className="resources-shard-meta">
+                      {shardBlock.roomCount} {t("dashboard.rooms")}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={
+                        collapsedShardMap[shardBlock.shardKey]
+                          ? "resources-shard-caret collapsed"
+                          : "resources-shard-caret"
+                      }
+                    />
+                  </span>
+                </button>
               </div>
 
-              <div className="rr-section-stack">
+              {!collapsedShardMap[shardBlock.shardKey] ? (
+                <div className="rr-section-stack">
                 <section className="rr-section">
                   <h3 className="rr-section-title">{sectionTitle.base}</h3>
                   <div className="rr-grid rr-grid-4">
@@ -733,7 +870,8 @@ export function ResourcesPanel() {
                     </div>
                   </section>
                 ) : null}
-              </div>
+                </div>
+              ) : null}
             </article>
           ))}
         </div>

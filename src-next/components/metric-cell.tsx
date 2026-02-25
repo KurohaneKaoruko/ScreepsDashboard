@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 interface MetricCellProps {
   label: string;
-  value: string;
+  value: ReactNode;
   detail?: string;
   tone?: "default" | "accent" | "ok" | "warn" | "danger";
   align?: "left" | "right";

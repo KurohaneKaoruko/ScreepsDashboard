@@ -5,6 +5,7 @@ import type { Locale } from "../lib/i18n/dict";
 import { useI18n } from "../lib/i18n/use-i18n";
 import {
   useSettingsStore,
+  type AccountAuthMode,
   type ConsoleSendMode,
   type MapRendererMode,
 } from "../stores/settings-store";
@@ -31,7 +32,9 @@ export function SettingsPanel() {
 
   const [accountLabel, setAccountLabel] = useState("");
   const [accountUsername, setAccountUsername] = useState("");
+  const [accountAuthMode, setAccountAuthMode] = useState<AccountAuthMode>("token");
   const [accountToken, setAccountToken] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
   const [accountServerId, setAccountServerId] = useState(activeServerId ?? servers[0]?.id ?? "");
   const [accountError, setAccountError] = useState<string | null>(null);
 
@@ -45,12 +48,15 @@ export function SettingsPanel() {
       addAccount({
         label: accountLabel,
         username: accountUsername,
+        authMode: accountAuthMode,
         token: accountToken,
+        password: accountPassword,
         serverId: accountServerId,
       });
       setAccountLabel("");
       setAccountUsername("");
       setAccountToken("");
+      setAccountPassword("");
     } catch (error) {
       setAccountError(error instanceof Error ? error.message : t("common.unknownError"));
     }
@@ -152,18 +158,50 @@ export function SettingsPanel() {
               value={accountUsername}
               onChange={(event) => setAccountUsername(event.currentTarget.value)}
               placeholder="username"
+              required={accountAuthMode === "password"}
             />
           </label>
 
-          <label className="field">
-            <span>{t("settings.accountToken")}</span>
-            <input
-              value={accountToken}
-              onChange={(event) => setAccountToken(event.currentTarget.value)}
-              type="password"
-              required
-            />
-          </label>
+          <div className="login-mode-row">
+            <div className="mode-switch">
+              <button
+                type="button"
+                className={accountAuthMode === "password" ? "chip active" : "chip"}
+                onClick={() => setAccountAuthMode("password")}
+              >
+                {t("login.modePassword")}
+              </button>
+              <button
+                type="button"
+                className={accountAuthMode === "token" ? "chip active" : "chip"}
+                onClick={() => setAccountAuthMode("token")}
+              >
+                {t("login.modeToken")}
+              </button>
+            </div>
+          </div>
+
+          {accountAuthMode === "password" ? (
+            <label className="field">
+              <span>{t("login.passwordLabel")}</span>
+              <input
+                value={accountPassword}
+                onChange={(event) => setAccountPassword(event.currentTarget.value)}
+                type="password"
+                required
+              />
+            </label>
+          ) : (
+            <label className="field">
+              <span>{t("settings.accountToken")}</span>
+              <input
+                value={accountToken}
+                onChange={(event) => setAccountToken(event.currentTarget.value)}
+                type="password"
+                required
+              />
+            </label>
+          )}
 
           <label className="field">
             <span>{t("settings.accountServer")}</span>
@@ -190,7 +228,10 @@ export function SettingsPanel() {
             <div key={account.id} className="entity-row">
               <span>{account.label}</span>
               <span>
-                {account.username || t("app.guestLabel")} @ {serverMap.get(account.serverId)?.name ?? "-"}
+                {account.username || t("app.guestLabel")} @ {serverMap.get(account.serverId)?.name ?? "-"} |{" "}
+                {(account.authMode ?? "token") === "password"
+                  ? t("login.modePassword")
+                  : t("login.modeToken")}
               </span>
               <div className="inline-actions">
                 <button

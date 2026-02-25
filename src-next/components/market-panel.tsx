@@ -1209,6 +1209,7 @@ export function MarketPanel() {
   }
 
   const selectedResourceMeta = getResourceMeta(selectedResource);
+  const showRoomColumn = !isSpecialSelectedResource;
 
   return (
     <section className="panel dashboard-panel market-panel market-v2-panel">
@@ -1282,7 +1283,7 @@ export function MarketPanel() {
                         <tr>
                           <th className="numeric market-v2-col-price">{t("market.price")}</th>
                           <th className="numeric market-v2-col-amount">{t("market.amount")}</th>
-                          <th className="market-v2-col-room">{t("market.room")}</th>
+                          {showRoomColumn ? <th className="market-v2-col-room">{t("market.room")}</th> : null}
                           <th className="numeric market-v2-col-action">{t("market.action")}</th>
                         </tr>
                       </thead>
@@ -1291,7 +1292,9 @@ export function MarketPanel() {
                           <tr key={order.id}>
                             <td className="numeric market-v2-col-price">{formatPrice(order.price)}</td>
                             <td className="numeric market-v2-col-amount">{formatNumber(order.remainingAmount, 0)}</td>
-                            <td className="market-v2-col-room" title={order.roomName ?? "--"}>{order.roomName ?? "--"}</td>
+                            {showRoomColumn ? (
+                              <td className="market-v2-col-room" title={order.roomName ?? "--"}>{order.roomName ?? "--"}</td>
+                            ) : null}
                             <td className="numeric market-v2-col-action">
                               <button
                                 className="tiny-button market-v2-order-action"
@@ -1327,7 +1330,7 @@ export function MarketPanel() {
                         <tr>
                           <th className="numeric market-v2-col-price">{t("market.price")}</th>
                           <th className="numeric market-v2-col-amount">{t("market.amount")}</th>
-                          <th className="market-v2-col-room">{t("market.room")}</th>
+                          {showRoomColumn ? <th className="market-v2-col-room">{t("market.room")}</th> : null}
                           <th className="numeric market-v2-col-action">{t("market.action")}</th>
                         </tr>
                       </thead>
@@ -1336,7 +1339,9 @@ export function MarketPanel() {
                           <tr key={order.id}>
                             <td className="numeric market-v2-col-price">{formatPrice(order.price)}</td>
                             <td className="numeric market-v2-col-amount">{formatNumber(order.remainingAmount, 0)}</td>
-                            <td className="market-v2-col-room" title={order.roomName ?? "--"}>{order.roomName ?? "--"}</td>
+                            {showRoomColumn ? (
+                              <td className="market-v2-col-room" title={order.roomName ?? "--"}>{order.roomName ?? "--"}</td>
+                            ) : null}
                             <td className="numeric market-v2-col-action">
                               <button
                                 className="tiny-button market-v2-order-action"
