@@ -6,19 +6,23 @@ Screeps Dashboard is a cross-platform client built with `Tauri 2 + Next.js 15` f
 
 ## Features
 
-- Authentication: sign in with password (exchange for token) or direct token login.
+- Authentication: password sign-in (exchange to token), direct token sign-in, and guest mode.
 - Endpoint compatibility probing for better support across official and private Screeps servers.
-- User dashboard (`/user`): resources, GCL/GPL, CPU/MEM/Bucket, owned-room thumbnails.
-- Room detail (`/user/room?name=...`): terrain, resource points, structure summary, creep table.
-- Public world panel (`/rooms`): room search/filter/sort, map stats, leaderboard snapshot.
-- Rankings (`/rankings`): `global/season` modes, dimensions, pagination, filtering.
-- Settings (`/settings`): language switch (`zh-CN` / `en-US`), server/account management.
+- User page (`/user`): GCL/GPL, alliance info, room thumbnails, and profile overview.
+- Public user view: use `?target=<username>` to inspect other players' public data; in this mode, account resources and CPU/MEM blocks are hidden, and room-building thumbnails are rendered in red.
+- Resources page (`/resources`): shard-grouped room inventory, per-shard collapse, and an aggregate "all shards" section when multiple shards exist.
+- Room detail (`/rooms?name=<room>&shard=<shard>`): inspect map/object details for a specific room.
+- Rankings (`/rankings`): dimensions, filtering, pagination.
+- Market (`/market`): resource order browsing and order-assist flow.
+- Messages (`/messages`) and Console (`/console`): unavailable in guest mode; token session required.
+- Map (`/map`): currently a placeholder page (under development).
+- Sidebar public search: available in any active session (including guest) to jump to public user/resources pages.
 - Request pipeline: Tauri Rust command `screeps_request` first, browser `fetch` fallback.
-- Console execution pipeline: desktop uses Tauri Rust command `screeps_console_execute`; browser request fallback is only used when Tauri invocation fails.
+- Console execution pipeline: Tauri Rust command `screeps_console_execute` first, browser request fallback on failure.
 
 ## Tech Stack
 
-- Frontend: Next.js 15, React 19, TypeScript, SWR, Zustand, Tailwind CSS 4
+- Frontend: Next.js 15, React 19, TypeScript, SWR, Zustand
 - Shell: Tauri 2
 - Rust HTTP bridge: `reqwest` (`rustls-tls`)
 
@@ -137,9 +141,10 @@ $env:NDK_HOME="$env:ANDROID_HOME\ndk\<version>"
 
 ## Data and Security Notes
 
-- Session, server/account settings, and locale are persisted in `localStorage` through Zustand `persist`.
-- Password itself is not persisted, but token may be persisted for auto-login.
-- On shared devices, avoid saving accounts, and clear local data after use.
+- Session, server/account settings, and UI preferences are persisted in `localStorage` through Zustand `persist`.
+- Saved accounts persist credentials by mode: token mode stores token; password mode stores username and password.
+- Password entered ad hoc on the login page is not auto-persisted; it is only persisted if saved as a password-mode account in Settings.
+- On shared devices, avoid saving accounts and clear local data after use.
 
 ## CI
 
@@ -159,19 +164,13 @@ CI is defined in `.github/workflows/ci.yml` and runs:
 npm run version
 ```
 
-2. Interactive release (prompts for version/title/body, then commit/tag/push):
+2. Interactive release:
 
 ```bash
 npm run release
 ```
 
-3. Non-interactive release with prerelease version and custom release notes:
-
-```bash
-npm run release -- --version 1.2.3-alpha --title "Screeps Dashboard v1.2.3-alpha" --body-file docs/release-notes/v1.2.3-alpha.md --yes
-```
-
-The `v*` tag push triggers `.github/workflows/release.yml`, which builds desktop installers for Windows (x64 + ARM64), Linux (x64 + ARM64, ARM64 best effort), macOS universal, Android APK/AAB (arm64/armv7/x86_64/x86), and an iOS bundle (best effort), then uploads artifacts to GitHub Release automatically.
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds desktop installers for Windows/macOS/Linux, Android APK/AAB, and best-effort iOS artifacts, then uploads them to GitHub Releases.
 
 ## License
 
