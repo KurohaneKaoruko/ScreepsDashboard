@@ -21,7 +21,9 @@ import {
 } from "../lib/screeps/runtime-realtime";
 import {
   buildRoomMapRealtimeChannels,
+  buildRoomObjectRealtimeChannels,
   extractRoomMapOverlayFromEvent,
+  extractRoomObjectsRealtimeUpdate,
   toRoomMapOverlayKey,
   type RoomMapOverlay,
 } from "../lib/screeps/room-map-realtime";
@@ -307,9 +309,39 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
     }
     return [...channels];
   }, [roomRealtimeSubscriptionKey]);
+
+  // 房间对象实时频道 (room: 频道)
+  const roomObjectRealtimeChannels = useMemo(() => {
+    const channels = new Set<string>();
+    if (!roomRealtimeSubscriptionKey) {
+      return [];
+    }
+
+    const tokens = roomRealtimeSubscriptionKey.split("|");
+    for (const token of tokens) {
+      if (!token) {
+        continue;
+      }
+
+      const separatorIndex = token.indexOf("/");
+      if (separatorIndex <= 0 || separatorIndex >= token.length - 1) {
+        continue;
+      }
+
+      const shardToken = token.slice(0, separatorIndex);
+      const roomName = token.slice(separatorIndex + 1);
+      const shard = shardToken === "unknown" ? undefined : shardToken;
+      const roomChannels = buildRoomObjectRealtimeChannels(roomName, shard);
+      for (const channel of roomChannels) {
+        channels.add(channel);
+      }
+    }
+    return [...channels];
+  }, [roomRealtimeSubscriptionKey]);
+
   const realtimeChannels = useMemo(
-    () => [...new Set([...runtimeRealtimeChannels, ...roomMapRealtimeChannels])],
-    [runtimeRealtimeChannels, roomMapRealtimeChannels]
+    () => [...new Set([...runtimeRealtimeChannels, ...roomMapRealtimeChannels, ...roomObjectRealtimeChannels])],
+    [runtimeRealtimeChannels, roomMapRealtimeChannels, roomObjectRealtimeChannels]
   );
   const ringColors = {
     gcl: "#4cc4cb",
@@ -477,19 +509,50 @@ export function DashboardPanel({ onInitialLoadStateChange }: DashboardPanelProps
         }));
       }
 
+      // 处理房间地图覆盖层 (roomMap2: 频道)
       const roomMapOverlay = extractRoomMapOverlayFromEvent(event);
-      if (!roomMapOverlay) {
-        return;
+      if (roomMapOverlay) {
+        const overlayKey = toRoomMapOverlayKey(
+          roomMapOverlay.roomName,
+          roomMapOverlay.shard
+        );
+        setRoomMapOverlays((current) => ({
+          ...current,
+          [overlayKey]: roomMapOverlay,
+        }));
       }
 
-      const overlayKey = toRoomMapOverlayKey(
-        roomMapOverlay.roomName,
-        roomMapOverlay.shard
-      );
-      setRoomMapOverlays((current) => ({
-        ...current,
-        [overlayKey]: roomMapOverlay,
-      }));
+      // 处理房间对象实时更新 (room: 频道)
+      const roomObjectsUpdate = extractRoomObjectsRealtimeUpdate(event);
+      if (roomObjectsUpdate) {
+        const dashboardKey = toDashboardRoomKey(roomObjectsUpdate.roomName, roomObjectsUpdate.shard);
+        setRoomObjectsByKey((current) => {
+          const currentObjects = current[dashboardKey] ?? [];
+          const isMergeMode = roomObjectsUpdate.objectUpdateMode === "merge";
+          const removedIds = roomObjectsUpdate.removedObjectIds;
+
+          if (isMergeMode && removedIds && removedIds.length > 0) {
+            // 增量模式：删除被移除的对象，合并新/更新的对象
+            const removedSet = new Set(removedIds);
+            const filteredCurrent = currentObjects.filter((obj) => !removedSet.has(obj.id));
+            const newObjectsMap = new Map(roomObjectsUpdate.objects.map((obj) => [obj.id, obj]));
+            const merged = [...filteredCurrent];
+            for (const newObj of newObjectsMap.values()) {
+              const existingIndex = merged.findIndex((obj) => obj.id === newObj.id);
+              if (existingIndex >= 0) {
+                merged[existingIndex] = newObj;
+              } else {
+                merged.push(newObj);
+              }
+            }
+            return { ...current, [dashboardKey]: merged };
+          } else if (roomObjectsUpdate.objects.length > 0) {
+            // 全量替换模式或只有新增对象
+            return { ...current, [dashboardKey]: roomObjectsUpdate.objects };
+          }
+          return current;
+        });
+      }
     };
 
     const unsubs = realtimeChannels.map((channel) =>

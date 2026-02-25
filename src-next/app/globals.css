@@ -1708,7 +1708,10 @@ a {
 }
 
 .room-detail-panel.room-detail-panel-map .room-game-map.room-game-map-official {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
 }
 
@@ -1775,15 +1778,17 @@ a {
 }
 
 .room-game-map-viewport.room-game-map-viewport-official {
-  min-height: 220px;
-  height: 100%;
+  min-height: clamp(300px, 56vh, 620px);
+  height: clamp(320px, 64vh, 760px);
   border: 1px solid #24344d;
   border-radius: 10px;
   background: #080d12;
 }
 
 .room-detail-panel.room-detail-panel-map .room-game-map-viewport.room-game-map-viewport-official {
+  flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
 }
 
 .room-game-map-viewport.is-dragging {
@@ -3920,8 +3925,8 @@ a {
   }
 
   .room-game-map-viewport.room-game-map-viewport-official {
-    min-height: 200px;
-    height: 100%;
+    min-height: clamp(260px, 52vh, 520px);
+    height: clamp(280px, 58vh, 620px);
   }
 
   .dashboard-panel,
@@ -4096,8 +4101,8 @@ a {
   }
 
   .room-game-map-viewport.room-game-map-viewport-official {
-    min-height: 160px;
-    height: 100%;
+    min-height: clamp(220px, 48vh, 420px);
+    height: clamp(240px, 54vh, 520px);
   }
 
   .inline-select-trigger {

@@ -11,7 +11,11 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import { SCREEPS_RENDERER_RESOURCE_MAP } from "../lib/screeps/renderer-resource-map";
-import type { RoomObjectSummary } from "../lib/screeps/types";
+import type {
+  OfficialRoomObjectRecord,
+  OfficialRoomUserRecord,
+  RoomObjectSummary,
+} from "../lib/screeps/types";
 import { useSettingsStore } from "../stores/settings-store";
 
 interface RoomGameplayMapProps {
@@ -20,9 +24,13 @@ interface RoomGameplayMapProps {
   roomShard?: string;
   gameTime?: number;
   roomObjects?: RoomObjectSummary[];
+  officialObjects?: OfficialRoomObjectRecord[];
+  officialUsers?: Record<string, OfficialRoomUserRecord>;
+  currentUsername?: string;
+  currentUserId?: string;
 }
 
-interface RendererObjectState {
+interface RendererObjectState extends Record<string, unknown> {
   _id: string;
   room: string;
   type: string;
@@ -36,9 +44,8 @@ interface RendererObjectState {
   ticksToLive?: number;
 }
 
-interface RendererUserState {
+interface RendererUserState extends Record<string, unknown> {
   username: string;
-  color: number;
 }
 
 interface RendererMetadata {
@@ -50,7 +57,12 @@ interface RendererInstance {
   release(): void;
   resize(size?: { width: number; height: number }): void;
   applyState(
-    state: { objects: RendererObjectState[]; users?: Record<string, RendererUserState>; gameTime?: number },
+    state: {
+      objects: RendererObjectState[];
+      users?: Record<string, RendererUserState>;
+      gameTime?: number;
+      gameData?: Record<string, unknown>;
+    },
     tickDuration?: number
   ): void;
   setTerrain(terrain: RendererObjectState[]): void;
@@ -61,7 +73,7 @@ interface RendererInstance {
 
 interface RendererInternals {
   app?: { stage?: { position?: { x: number; y: number } } };
-  world?: { options?: { VIEW_BOX?: number } };
+  world?: { options?: { VIEW_BOX?: number; gameData?: Record<string, unknown> } };
 }
 
 interface RendererModule {
@@ -133,6 +145,213 @@ const WATCHDOG_LONG_FRAME_MS = 1_200;
 const WATCHDOG_MAX_CONSECUTIVE_LONG_FRAMES = 2;
 const MAX_RECOVERABLE_FRAME_ERRORS = 2;
 const CONSOLE_MONITOR_KEY = "__screepsOfficialConsoleMonitor";
+interface OfficialRendererGameData {
+  showEnemyNames: Record<string, boolean>;
+  showMyNames: Record<string, boolean>;
+  showCreepSpeech: boolean;
+  player?: string;
+}
+
+const DEFAULT_OFFICIAL_GAME_DATA: OfficialRendererGameData = {
+  showEnemyNames: {
+    creeps: false,
+    spawns: false,
+  },
+  showMyNames: {
+    creeps: false,
+    spawns: false,
+  },
+  showCreepSpeech: false,
+};
+
+const OWNED_PLAYER_COLOR = "#00ff66";
+const HOSTILE_PLAYER_COLOR = "#ff4d4f";
+
+function toNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeIdentity(value: string | undefined): string | undefined {
+  return value?.trim().toLowerCase();
+}
+
+function createOfficialGameData(player?: string): OfficialRendererGameData {
+  const gameData: OfficialRendererGameData = {
+    showEnemyNames: {
+      ...DEFAULT_OFFICIAL_GAME_DATA.showEnemyNames,
+    },
+    showMyNames: {
+      ...DEFAULT_OFFICIAL_GAME_DATA.showMyNames,
+    },
+    showCreepSpeech: DEFAULT_OFFICIAL_GAME_DATA.showCreepSpeech,
+  };
+  if (player) {
+    gameData.player = player;
+  }
+  return gameData;
+}
+
+function resolveOfficialObjectUser(item: OfficialRoomObjectRecord): string | undefined {
+  const ownerRecord = toRecord(item.owner);
+  return (
+    toNonEmptyString(item.user) ??
+    toNonEmptyString(item.userId) ??
+    toNonEmptyString(item.owner) ??
+    toNonEmptyString(ownerRecord?._id) ??
+    toNonEmptyString(ownerRecord?.id) ??
+    toNonEmptyString(ownerRecord?.username)
+  );
+}
+
+function isCurrentUserIdentity(
+  value: string | undefined,
+  currentUsername: string | undefined,
+  currentUserId: string | undefined
+): boolean {
+  const normalizedValue = normalizeIdentity(value);
+  if (!normalizedValue) {
+    return false;
+  }
+  const normalizedUsername = normalizeIdentity(currentUsername);
+  const normalizedUserId = normalizeIdentity(currentUserId);
+  return normalizedValue === normalizedUsername || normalizedValue === normalizedUserId;
+}
+
+function resolvePlayerColor(
+  identity: string | undefined,
+  currentUsername: string | undefined,
+  currentUserId: string | undefined
+): string {
+  return isCurrentUserIdentity(identity, currentUsername, currentUserId)
+    ? OWNED_PLAYER_COLOR
+    : HOSTILE_PLAYER_COLOR;
+}
+
+interface RendererUsersFromOfficialResult {
+  users: Record<string, RendererUserState>;
+  playerId?: string;
+}
+
+function addRendererUserAlias(
+  sink: Record<string, RendererUserState>,
+  alias: string | undefined,
+  value: RendererUserState
+): void {
+  const normalizedAlias = toNonEmptyString(alias);
+  if (!normalizedAlias || sink[normalizedAlias]) {
+    return;
+  }
+  sink[normalizedAlias] = value;
+}
+
+function resolveObjectTypeFromOfficial(item: OfficialRoomObjectRecord): string | undefined {
+  const directType = toNonEmptyString(item.type);
+  const structureType = toNonEmptyString(item.structureType);
+  const hasConstructionProgress =
+    toFiniteNumber(item.progress) !== undefined || toFiniteNumber(item.progressTotal) !== undefined;
+
+  if (directType === "constructionSite" && !hasConstructionProgress && structureType) {
+    return structureType;
+  }
+
+  return directType ?? structureType;
+}
+
+function resolveObjectIdFromOfficial(
+  item: OfficialRoomObjectRecord,
+  roomName: string,
+  rawType: string,
+  x: number,
+  y: number
+): string {
+  return (
+    toNonEmptyString(item._id) ??
+    toNonEmptyString(item.id) ??
+    `${roomName}:${rawType}:${x}:${y}`
+  );
+}
+
+function resolveObjectRoomNameFromOfficial(
+  item: OfficialRoomObjectRecord,
+  fallbackRoomName: string
+): string {
+  return toNonEmptyString(item.room) ?? fallbackRoomName;
+}
+
+function resolveCurrentPlayerFromOfficialUsers(
+  officialUsers: Record<string, OfficialRoomUserRecord> | undefined,
+  currentUsername: string | undefined,
+  currentUserId: string | undefined
+): string | undefined {
+  const normalizedCurrentUserId = toNonEmptyString(currentUserId);
+  if (normalizedCurrentUserId) {
+    return normalizedCurrentUserId;
+  }
+  const normalizedCurrentUsername = normalizeIdentity(currentUsername);
+  if (!officialUsers || !normalizedCurrentUsername) {
+    return toNonEmptyString(currentUsername);
+  }
+
+  for (const [key, userRecord] of Object.entries(officialUsers)) {
+    const username = toNonEmptyString(userRecord.username);
+    if (!username || normalizeIdentity(username) !== normalizedCurrentUsername) {
+      continue;
+    }
+    return toNonEmptyString(userRecord._id) ?? toNonEmptyString(key) ?? username;
+  }
+
+  return toNonEmptyString(currentUsername);
+}
+
+function buildRendererUsersFromOfficial(
+  officialUsers: Record<string, OfficialRoomUserRecord> | undefined,
+  currentUsername?: string,
+  currentUserId?: string
+): RendererUsersFromOfficialResult {
+  const users: Record<string, RendererUserState> = {};
+  let playerId = toNonEmptyString(currentUserId);
+
+  if (!officialUsers) {
+    return {
+      users,
+      playerId,
+    };
+  }
+
+  for (const [key, userRecord] of Object.entries(officialUsers)) {
+    const username = toNonEmptyString(userRecord.username) ?? key;
+    const userId =
+      toNonEmptyString(userRecord._id) ??
+      toNonEmptyString(userRecord.id) ??
+      toNonEmptyString(userRecord.userId) ??
+      toNonEmptyString(key);
+    const isCurrent =
+      isCurrentUserIdentity(userId, currentUsername, currentUserId) ||
+      isCurrentUserIdentity(username, currentUsername, currentUserId);
+    if (!playerId && isCurrent && userId) {
+      playerId = userId;
+    }
+
+    const rendererUser: RendererUserState = {
+      ...userRecord,
+      username,
+      color: isCurrent ? OWNED_PLAYER_COLOR : HOSTILE_PLAYER_COLOR,
+    };
+
+    addRendererUserAlias(users, key, rendererUser);
+    addRendererUserAlias(users, userId, rendererUser);
+    addRendererUserAlias(users, username, rendererUser);
+  }
+
+  return {
+    users,
+    playerId,
+  };
+}
 const RENDERER_SOURCE_PATTERNS = [
   "@screeps/renderer",
   "pixi",
@@ -210,46 +429,39 @@ function normalizeObjectType(type: string): string {
   return type;
 }
 
-function hashColor(seed: string): number {
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function toIntegerGridCoordinate(value: unknown): number | null {
+  if (typeof value === "number") {
+    return toGridCoordinate(value);
   }
 
-  const hue = hash % 360;
-  const saturation = 62;
-  const lightness = 58;
-  const c = ((100 - Math.abs(2 * lightness - 100)) * saturation) / 10000;
-  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
-  const m = lightness / 100 - c / 2;
-
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  if (hue < 60) {
-    r = c;
-    g = x;
-  } else if (hue < 120) {
-    r = x;
-    g = c;
-  } else if (hue < 180) {
-    g = c;
-    b = x;
-  } else if (hue < 240) {
-    g = x;
-    b = c;
-  } else if (hue < 300) {
-    r = x;
-    b = c;
-  } else {
-    r = c;
-    b = x;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return toGridCoordinate(parsed);
+    }
   }
 
-  const red = Math.round((r + m) * 255);
-  const green = Math.round((g + m) * 255);
-  const blue = Math.round((b + m) * 255);
-  return (red << 16) | (green << 8) | blue;
+  return null;
 }
 
 function decodeTerrainToObjects(encoded: string | undefined, roomName: string): RendererObjectState[] {
@@ -295,6 +507,87 @@ function decodeTerrainToObjects(encoded: string | undefined, roomName: string): 
   return terrainObjects;
 }
 
+function buildRendererObjectsFromOfficial(
+  roomName: string,
+  officialObjects: OfficialRoomObjectRecord[] | undefined
+): RendererObjectState[] {
+  if (!officialObjects?.length) {
+    return [];
+  }
+
+  const rendererObjects: RendererObjectState[] = [];
+  for (const item of officialObjects) {
+    const x = toIntegerGridCoordinate(item.x);
+    const y = toIntegerGridCoordinate(item.y);
+    if (x === null || y === null) {
+      continue;
+    }
+
+    const rawType = resolveObjectTypeFromOfficial(item);
+    if (!rawType) {
+      continue;
+    }
+
+    const normalizedType = normalizeObjectType(rawType);
+    const mineralType =
+      typeof item.mineralType === "string" && item.mineralType.trim().length > 0
+        ? item.mineralType.trim()
+        : undefined;
+    if (normalizedType === "mineral" && !mineralType) {
+      continue;
+    }
+    const room = resolveObjectRoomNameFromOfficial(item, roomName);
+    const objectId = resolveObjectIdFromOfficial(item, room, rawType, x, y);
+    const resolvedUser = resolveOfficialObjectUser(item);
+    const rawStore = toRecord(item.store);
+    const rawStoreCapacityResource = toRecord(item.storeCapacityResource);
+    const energy = toFiniteNumber(item.energy);
+    const energyCapacity = toFiniteNumber(item.energyCapacity);
+    const store = {
+      ...(rawStore ?? {}),
+    };
+    if (energy !== undefined && store.energy === undefined) {
+      store.energy = energy;
+    }
+    const storeCapacityResource =
+      rawStoreCapacityResource !== undefined || energyCapacity !== undefined
+        ? {
+            ...(rawStoreCapacityResource ?? {}),
+          }
+        : undefined;
+    if (
+      storeCapacityResource &&
+      energyCapacity !== undefined &&
+      storeCapacityResource.energy === undefined
+    ) {
+      storeCapacityResource.energy = energyCapacity;
+    }
+
+    const rendererObject: RendererObjectState = {
+      ...item,
+      _id: objectId,
+      room,
+      type: normalizedType,
+      x,
+      y,
+    };
+    if (mineralType) {
+      rendererObject.mineralType = mineralType;
+    }
+    if (resolvedUser) {
+      rendererObject.user = resolvedUser;
+    }
+    rendererObject.store = store;
+    if (storeCapacityResource) {
+      rendererObject.storeCapacityResource = storeCapacityResource;
+    }
+
+    rendererObjects.push(rendererObject);
+  }
+
+  return rendererObjects;
+}
+
 function buildRendererObjects(
   roomName: string,
   roomObjects: RoomObjectSummary[] | undefined,
@@ -319,9 +612,43 @@ function buildRendererObjects(
       x,
       y,
     };
+    if (
+      objectState.type === "mineral" &&
+      !(typeof item.mineralType === "string" && item.mineralType.trim().length > 0)
+    ) {
+      continue;
+    }
+    if (item.mineralType) {
+      objectState.mineralType = item.mineralType;
+    }
+    const store = {
+      ...(item.store ?? {}),
+    };
+    if (item.energy !== undefined && store.energy === undefined) {
+      store.energy = item.energy;
+    }
+    objectState.store = store;
+    if (item.storeCapacity !== undefined) {
+      objectState.storeCapacity = item.storeCapacity;
+    }
+    if (item.storeCapacityResource || item.energyCapacity !== undefined) {
+      const storeCapacityResource = {
+        ...(item.storeCapacityResource ?? {}),
+      };
+      if (item.energyCapacity !== undefined && storeCapacityResource.energy === undefined) {
+        storeCapacityResource.energy = item.energyCapacity;
+      }
+      objectState.storeCapacityResource = storeCapacityResource;
+    }
+    if (item.energy !== undefined) {
+      objectState.energy = item.energy;
+    }
+    if (item.energyCapacity !== undefined) {
+      objectState.energyCapacity = item.energyCapacity;
+    }
 
-    if (item.owner) {
-      objectState.user = item.owner;
+    if (item.user || item.owner) {
+      objectState.user = item.user ?? item.owner;
     }
     if (item.name) {
       objectState.name = item.name;
@@ -343,18 +670,21 @@ function buildRendererObjects(
   return rendererObjects;
 }
 
-function buildRendererUsers(roomObjects: RoomObjectSummary[] | undefined): Record<string, RendererUserState> {
+function buildRendererUsers(
+  roomObjects: RoomObjectSummary[] | undefined,
+  currentUsername?: string,
+  currentUserId?: string
+): Record<string, RendererUserState> {
   const users: Record<string, RendererUserState> = {};
-
   for (const object of roomObjects ?? []) {
-    const owner = object.owner?.trim();
+    const owner = (object.user ?? object.owner)?.trim();
     if (!owner || users[owner]) {
       continue;
     }
 
     users[owner] = {
       username: owner,
-      color: hashColor(owner),
+      color: resolvePlayerColor(owner, currentUsername, currentUserId),
     };
   }
 
@@ -620,6 +950,10 @@ export function RoomGameplayMap({
   roomShard,
   gameTime: externalGameTime,
   roomObjects,
+  officialObjects,
+  officialUsers,
+  currentUsername,
+  currentUserId,
 }: RoomGameplayMapProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const rendererHostRef = useRef<HTMLDivElement | null>(null);
@@ -628,6 +962,7 @@ export function RoomGameplayMap({
   const setupAttemptRef = useRef(0);
   const releasedRenderersRef = useRef<WeakSet<object>>(new WeakSet<object>());
   const rendererStateRef = useRef<OfficialRendererState>("idle");
+  const viewportSizeRef = useRef<ViewportSize>({ width: 0, height: 0 });
   const supportedObjectTypesRef = useRef<Set<string>>(new Set<string>());
   const dragRef = useRef<DragState | null>(null);
   const interactedRef = useRef(false);
@@ -664,11 +999,30 @@ export function RoomGameplayMap({
     [externalGameTime, roomObjects, roomName, roomShard]
   );
   const terrainObjects = useMemo(() => decodeTerrainToObjects(encoded, roomName), [encoded, roomName]);
-  const rendererObjects = useMemo(
-    () => buildRendererObjects(roomName, roomObjects, gameTime),
-    [roomName, roomObjects, gameTime]
+  const rendererObjects = useMemo(() => {
+    const official = buildRendererObjectsFromOfficial(roomName, officialObjects);
+    if (official.length > 0) {
+      return official;
+    }
+    return buildRendererObjects(roomName, roomObjects, gameTime);
+  }, [gameTime, officialObjects, roomName, roomObjects]);
+  const officialUsersBundle = useMemo(
+    () => buildRendererUsersFromOfficial(officialUsers, currentUsername, currentUserId),
+    [currentUserId, currentUsername, officialUsers]
   );
-  const rendererUsers = useMemo(() => buildRendererUsers(roomObjects), [roomObjects]);
+  const rendererUsers = useMemo(() => {
+    if (Object.keys(officialUsersBundle.users).length > 0) {
+      return officialUsersBundle.users;
+    }
+    return buildRendererUsers(roomObjects, currentUsername, currentUserId);
+  }, [currentUserId, currentUsername, officialUsersBundle.users, roomObjects]);
+  const rendererPlayer = useMemo(
+    () =>
+      officialUsersBundle.playerId ??
+      resolveCurrentPlayerFromOfficialUsers(officialUsers, currentUsername, currentUserId),
+    [currentUserId, currentUsername, officialUsers, officialUsersBundle.playerId]
+  );
+  const rendererGameData = useMemo(() => createOfficialGameData(rendererPlayer), [rendererPlayer]);
   const terrainKey = useMemo(() => `${roomName}:${encoded ?? ""}`, [roomName, encoded]);
 
   const setOfficialState = useCallback((nextState: OfficialRendererState) => {
@@ -962,6 +1316,8 @@ export function RoomGameplayMap({
 
   useEffect(() => {
     unmountedRef.current = false;
+    rendererStateRef.current = "idle";
+    setRendererState("idle");
     return () => {
       unmountedRef.current = true;
       setupAttemptRef.current += 1;
@@ -978,10 +1334,12 @@ export function RoomGameplayMap({
 
     const refreshViewportSize = () => {
       const rect = viewport.getBoundingClientRect();
-      setViewportSize({
+      const nextViewportSize = {
         width: Math.max(0, Math.floor(rect.width)),
         height: Math.max(0, Math.floor(rect.height)),
-      });
+      };
+      viewportSizeRef.current = nextViewportSize;
+      setViewportSize(nextViewportSize);
     };
 
     refreshViewportSize();
@@ -1065,8 +1423,8 @@ export function RoomGameplayMap({
             autoStart: true,
             useDefaultLogger: false,
             size: {
-              width: viewportSize.width,
-              height: viewportSize.height,
+              width: viewportSizeRef.current.width,
+              height: viewportSizeRef.current.height,
             },
             resourceMap: SCREEPS_RENDERER_RESOURCE_MAP,
             worldConfigs: {
@@ -1079,6 +1437,7 @@ export function RoomGameplayMap({
                 width: ROOM_VIEW_BOX,
                 height: ROOM_VIEW_BOX,
               },
+              gameData: rendererGameData,
               lighting: renderProfileRef.current === "safe" ? "disabled" : "normal",
             },
           });
@@ -1134,8 +1493,7 @@ export function RoomGameplayMap({
     setOfficialState,
     startWatchdog,
     viewportReady,
-    viewportSize.height,
-    viewportSize.width,
+    rendererGameData,
     releaseRendererSafely,
   ]);
 
@@ -1187,6 +1545,13 @@ export function RoomGameplayMap({
     const appliedState = runRendererAction(
       "frame",
       (renderer) => {
+        const worldOptions = (renderer as RendererInternals | null)?.world?.options as
+          | Record<string, unknown>
+          | undefined;
+        if (worldOptions) {
+          worldOptions.gameData = rendererGameData;
+        }
+
         renderer.applyState(
           {
             objects: liveObjects,
@@ -1209,6 +1574,7 @@ export function RoomGameplayMap({
     getFitZoomForRenderer,
     isReady,
     rendererObjects,
+    rendererGameData,
     rendererUsers,
     runRendererAction,
     terrainKey,

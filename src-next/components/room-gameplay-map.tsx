@@ -5,7 +5,11 @@ import { Component, type ComponentType, type ErrorInfo, type ReactNode } from "r
 import { useSettingsStore, type MapRendererMode } from "../stores/settings-store";
 import { RoomGameplayMap as RoomGameplayMapOfficial } from "./room-gameplay-map-official";
 import { RoomGameplayMap as RoomGameplayMapOptimized } from "./room-gameplay-map-optimized";
-import type { RoomObjectSummary } from "../lib/screeps/types";
+import type {
+  OfficialRoomObjectRecord,
+  OfficialRoomUserRecord,
+  RoomObjectSummary,
+} from "../lib/screeps/types";
 
 interface RoomGameplayMapProps {
   encoded?: string;
@@ -13,6 +17,10 @@ interface RoomGameplayMapProps {
   roomShard?: string;
   gameTime?: number;
   roomObjects?: RoomObjectSummary[];
+  officialObjects?: OfficialRoomObjectRecord[];
+  officialUsers?: Record<string, OfficialRoomUserRecord>;
+  currentUsername?: string;
+  currentUserId?: string;
 }
 
 const RENDER_COMPONENT_BY_MODE: Record<MapRendererMode, ComponentType<RoomGameplayMapProps>> = {

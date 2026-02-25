@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { screepsBatchRequest, screepsRequest } from "./request";
 import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
-import { hasTauriRuntime } from "../runtime/platform";
 import type {
+  OfficialRoomObjectRecord,
+  OfficialRoomUserRecord,
   QueryParams,
   RoomCreepSummary,
   RoomDetailSnapshot,
@@ -70,6 +70,15 @@ interface ParsedEntities {
   objects: RoomObjectSummary[];
 }
 
+type RealtimeObjectsUpdateMode = "replace" | "merge";
+
+export interface RoomDetailRealtimePatch extends Partial<RoomDetailSnapshot> {
+  objectUpdateMode?: RealtimeObjectsUpdateMode;
+  officialObjectUpdateMode?: RealtimeObjectsUpdateMode;
+  removedObjectIds?: string[];
+  removedOfficialObjectIds?: string[];
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return null;
@@ -107,6 +116,20 @@ function firstString(values: unknown[]): string | undefined {
     }
   }
   return undefined;
+}
+
+function collectStringArray(value: unknown): string[] {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => asString(item))
+      .filter((item): item is string => item !== undefined);
+  }
+  // 如果是单个字符串，也包装成数组
+  const str = asString(value);
+  return str ? [str] : [];
 }
 
 function firstNumber(values: unknown[]): number | undefined {
@@ -640,6 +663,199 @@ function extractRoomObjectRecords(payload: unknown): Record<string, unknown>[] {
     const y = asNumber(record.y);
     return x !== undefined && y !== undefined;
   });
+}
+
+function toOfficialObjectRecords(value: unknown): OfficialRoomObjectRecord[] {
+  const records: OfficialRoomObjectRecord[] = [];
+
+  const appendRecord = (item: unknown, fallbackId?: string) => {
+    const record = asRecord(item);
+    if (!record) {
+      return;
+    }
+
+    const x = asNumber(record.x);
+    const y = asNumber(record.y);
+    if (x === undefined || y === undefined) {
+      return;
+    }
+
+    const normalizedRecord: OfficialRoomObjectRecord = {
+      ...record,
+    };
+    if (
+      fallbackId &&
+      !firstString([normalizedRecord._id, normalizedRecord.id])
+    ) {
+      normalizedRecord._id = fallbackId;
+    }
+    records.push(normalizedRecord);
+  };
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      appendRecord(item);
+    }
+    return records;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return records;
+  }
+
+  const directX = asNumber(record.x);
+  const directY = asNumber(record.y);
+  if (directX !== undefined && directY !== undefined) {
+    appendRecord(record);
+    return records;
+  }
+
+  for (const [key, item] of Object.entries(record)) {
+    appendRecord(item, key);
+  }
+
+  return records;
+}
+
+function toOfficialUsers(value: unknown): Record<string, OfficialRoomUserRecord> | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const users: Record<string, OfficialRoomUserRecord> = {};
+  for (const [key, rawUser] of Object.entries(record)) {
+    const userRecord = asRecord(rawUser);
+    if (!userRecord) {
+      continue;
+    }
+    users[key] = userRecord;
+  }
+
+  return Object.keys(users).length > 0 ? users : undefined;
+}
+
+export function extractOfficialRendererObjects(payload: unknown): OfficialRoomObjectRecord[] {
+  const root = asRecord(payload) ?? {};
+  const candidates = [
+    root.objects,
+    root.roomObjects,
+    asRecord(root.data)?.objects,
+    asRecord(root.data)?.roomObjects,
+    asRecord(root.result)?.objects,
+    asRecord(root.result)?.roomObjects,
+    asRecord(root.message)?.objects,
+    asRecord(root.message)?.roomObjects,
+  ];
+
+  for (const candidate of candidates) {
+    const records = toOfficialObjectRecords(candidate);
+    if (records.length > 0) {
+      return records;
+    }
+  }
+
+  return [];
+}
+
+export function extractOfficialRendererUsers(
+  payload: unknown
+): Record<string, OfficialRoomUserRecord> | undefined {
+  const root = asRecord(payload) ?? {};
+  const candidates = [
+    root.users,
+    asRecord(root.data)?.users,
+    asRecord(root.result)?.users,
+    asRecord(root.message)?.users,
+  ];
+
+  for (const candidate of candidates) {
+    const users = toOfficialUsers(candidate);
+    if (users) {
+      return users;
+    }
+  }
+
+  return undefined;
+}
+
+export function extractRoomDetailRealtimePatch(
+  roomInput: string,
+  shardInput: string | undefined,
+  payload: unknown
+): Partial<RoomDetailSnapshot> | null {
+  const roomName = normalizeRoomName(roomInput);
+  const shard = normalizeShard(shardInput);
+  const parsedRoomObjects = parseRoomObjectEntities(roomName, shard, [payload]);
+  const officialObjects = extractOfficialRendererObjects(payload);
+  const officialUsers = extractOfficialRendererUsers(payload);
+  const gameTime = resolveGameTime([payload]);
+
+  // 提取增量更新模式
+  const root = asRecord(payload) ?? {};
+  const updateMode = firstString([root.updateMode, root.mode, root.objectUpdateMode]) as
+    | RealtimeObjectsUpdateMode
+    | undefined;
+  const officialUpdateMode = firstString([root.officialUpdateMode, root.officialObjectUpdateMode]) as
+    | RealtimeObjectsUpdateMode
+    | undefined;
+
+  // 提取需要删除的对象 ID
+  const removedObjectIds = collectStringArray(root.removedObjectIds ?? root.removed ?? root.deleted);
+  const removedOfficialObjectIds = collectStringArray(
+    root.removedOfficialObjectIds ?? root.removedOfficial ?? root.deletedOfficial
+  );
+
+  const hasParsedObjects = parsedRoomObjects.objects.length > 0;
+  const hasOfficialObjects = officialObjects.length > 0;
+  const hasUsers = Boolean(officialUsers && Object.keys(officialUsers).length > 0);
+  const hasMeta =
+    parsedRoomObjects.owner !== undefined ||
+    parsedRoomObjects.controllerLevel !== undefined ||
+    parsedRoomObjects.energyAvailable !== undefined ||
+    parsedRoomObjects.energyCapacity !== undefined ||
+    parsedRoomObjects.shard !== undefined;
+
+  // 检查是否有任何有效数据或增量更新指令
+  const hasRemovalData = removedObjectIds.length > 0 || removedOfficialObjectIds.length > 0;
+  if (!hasParsedObjects && !hasOfficialObjects && !hasUsers && gameTime === undefined && !hasMeta && !hasRemovalData) {
+    return null;
+  }
+
+  const result: Partial<RoomDetailSnapshot> = {
+    fetchedAt: new Date().toISOString(),
+    roomName,
+    shard: parsedRoomObjects.shard ?? shard,
+    owner: parsedRoomObjects.owner,
+    controllerLevel: parsedRoomObjects.controllerLevel,
+    energyAvailable: parsedRoomObjects.energyAvailable,
+    energyCapacity: parsedRoomObjects.energyCapacity,
+    gameTime,
+    sources: parsedRoomObjects.sources,
+    minerals: parsedRoomObjects.minerals,
+    structures: parsedRoomObjects.structures,
+    creeps: parsedRoomObjects.creeps,
+    objects: parsedRoomObjects.objects,
+    officialObjects: hasOfficialObjects ? officialObjects : undefined,
+    officialUsers,
+  };
+
+  // 添加增量更新元数据
+  if (updateMode) {
+    (result as RoomDetailRealtimePatch).objectUpdateMode = updateMode;
+  }
+  if (officialUpdateMode) {
+    (result as RoomDetailRealtimePatch).officialObjectUpdateMode = officialUpdateMode;
+  }
+  if (removedObjectIds.length > 0) {
+    (result as RoomDetailRealtimePatch).removedObjectIds = removedObjectIds;
+  }
+  if (removedOfficialObjectIds.length > 0) {
+    (result as RoomDetailRealtimePatch).removedOfficialObjectIds = removedOfficialObjectIds;
+  }
+
+  return result;
 }
 
 function resolveObjectType(record: Record<string, unknown>): string | undefined {
@@ -1425,55 +1641,56 @@ export async function fetchRoomDetailSnapshot(
   const roomName = normalizeRoomName(roomInput);
   const shard = normalizeShard(shardInput);
 
-  if (hasTauriRuntime()) {
-    return invoke<RoomDetailSnapshot>("screeps_room_detail_fetch", {
-      request: {
-        baseUrl: session.baseUrl,
-        token: session.token,
-        username: session.username,
-        roomName,
-        shard,
-        roomsEndpoint: session.endpointMap.rooms
-          ? {
-              endpoint: session.endpointMap.rooms.endpoint,
-              method: session.endpointMap.rooms.method,
-              query: session.endpointMap.rooms.query,
-              body: session.endpointMap.rooms.body,
-            }
-          : undefined,
-      },
-    });
-  }
+  const [terrainPayload, roomObjectsPayload] = await Promise.all([
+    tryTerrain(session.baseUrl, session.token, session.username, roomName, shard),
+    tryRoomObjects(session.baseUrl, session.token, session.username, roomName, shard),
+  ]);
+  const officialObjects = extractOfficialRendererObjects(roomObjectsPayload);
+  const officialUsers = extractOfficialRendererUsers(roomObjectsPayload);
+  const parsedRoomObjects = parseRoomObjectEntities(roomName, shard, [roomObjectsPayload]);
 
-  const [terrainPayload, mapStatsPayload, overviewPayload, roomObjectsPayload, roomsPayload] =
-    await Promise.all([
-      tryTerrain(session.baseUrl, session.token, session.username, roomName, shard),
+  let mapStatsPayload: unknown;
+  let overviewPayload: unknown;
+  let roomsPayload: unknown;
+  const shouldFetchFallback = parsedRoomObjects.objects.length === 0 && officialObjects.length === 0;
+  if (shouldFetchFallback) {
+    [mapStatsPayload, overviewPayload, roomsPayload] = await Promise.all([
       tryMapStats(session.baseUrl, session.token, session.username, roomName, shard),
       tryRoomOverview(session.baseUrl, session.token, session.username, roomName, shard),
-      tryRoomObjects(session.baseUrl, session.token, session.username, roomName, shard),
       tryUserRooms(session),
     ]);
+  }
+
   const gameTime = resolveGameTime([
+    roomObjectsPayload,
     terrainPayload,
     mapStatsPayload,
     overviewPayload,
-    roomObjectsPayload,
     roomsPayload,
   ]);
 
-  const core = parseRoomCore(roomName, [
-    mapStatsPayload,
-    roomsPayload,
-    overviewPayload,
-    roomObjectsPayload,
-  ]);
+  const core = shouldFetchFallback
+    ? parseRoomCore(roomName, [
+        mapStatsPayload,
+        roomsPayload,
+        overviewPayload,
+        roomObjectsPayload,
+      ])
+    : {};
 
-  const parsedRoomObjects = parseRoomObjectEntities(roomName, shard, [roomObjectsPayload]);
-  const fallbackEntities = parseFallbackEntities(roomName, [
-    mapStatsPayload,
-    roomsPayload,
-    overviewPayload,
-  ]);
+  const fallbackEntities = shouldFetchFallback
+    ? parseFallbackEntities(roomName, [
+        mapStatsPayload,
+        roomsPayload,
+        overviewPayload,
+      ])
+    : {
+        sources: [],
+        minerals: [],
+        structures: [],
+        creeps: [],
+        objects: [],
+      };
 
   const sources = mergeByKey(
     parsedRoomObjects.sources,
@@ -1520,5 +1737,7 @@ export async function fetchRoomDetailSnapshot(
     structures,
     creeps,
     objects,
+    officialObjects: officialObjects.length > 0 ? officialObjects : undefined,
+    officialUsers,
   };
 }

@@ -28,7 +28,11 @@ import {
   createOptimizedPixiRuntime,
   type OptimizedPixiRuntime,
 } from "../lib/screeps/optimized-pixi-runtime";
-import type { RoomObjectSummary } from "../lib/screeps/types";
+import type {
+  OfficialRoomObjectRecord,
+  OfficialRoomUserRecord,
+  RoomObjectSummary,
+} from "../lib/screeps/types";
 
 interface RoomGameplayMapProps {
   encoded?: string;
@@ -36,6 +40,10 @@ interface RoomGameplayMapProps {
   roomShard?: string;
   gameTime?: number;
   roomObjects?: RoomObjectSummary[];
+  officialObjects?: OfficialRoomObjectRecord[];
+  officialUsers?: Record<string, OfficialRoomUserRecord>;
+  currentUsername?: string;
+  currentUserId?: string;
 }
 
 interface DragState {
@@ -493,4 +501,3 @@ export function RoomGameplayMap({
     </div>
   );
 }
-

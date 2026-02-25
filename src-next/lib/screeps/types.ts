@@ -227,6 +227,21 @@ export interface RoomObjectSummary {
   effects?: RoomObjectEffectSummary[];
 }
 
+export interface OfficialRoomObjectRecord extends Record<string, unknown> {
+  _id?: string;
+  id?: string;
+  type?: string;
+  x?: number;
+  y?: number;
+  room?: string;
+  user?: string;
+}
+
+export interface OfficialRoomUserRecord extends Record<string, unknown> {
+  _id?: string;
+  username?: string;
+}
+
 export interface RoomDetailSnapshot {
   fetchedAt: string;
   roomName: string;
@@ -242,6 +257,8 @@ export interface RoomDetailSnapshot {
   structures: RoomStructureSummary[];
   creeps: RoomCreepSummary[];
   objects: RoomObjectSummary[];
+  officialObjects?: OfficialRoomObjectRecord[];
+  officialUsers?: Record<string, OfficialRoomUserRecord>;
 }
 
 export interface PublicLeaderboardEntry {
