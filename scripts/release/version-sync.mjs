@@ -9,6 +9,7 @@ export const versionFiles = Object.freeze({
   packageJson: resolve(projectRoot, "package.json"),
   cargoToml: resolve(projectRoot, "src-tauri", "Cargo.toml"),
   tauriConf: resolve(projectRoot, "src-tauri", "tauri.conf.json"),
+  versionJson: resolve(projectRoot, "src-next", "public", "version.json"),
 });
 
 const semverPattern =
@@ -42,6 +43,7 @@ export function validateVersion(version) {
 export function readProjectVersions() {
   const packageJsonVersion = readJson(versionFiles.packageJson).version;
   const tauriConfVersion = readJson(versionFiles.tauriConf).version;
+  const versionJsonVersion = readJson(versionFiles.versionJson).version;
   const cargoTomlContent = readFileSync(versionFiles.cargoToml, "utf8");
   const cargoTomlVersion = readCargoVersion(cargoTomlContent);
 
@@ -49,6 +51,7 @@ export function readProjectVersions() {
     packageJson: packageJsonVersion,
     cargoToml: cargoTomlVersion,
     tauriConf: tauriConfVersion,
+    versionJson: versionJsonVersion,
   };
 }
 
@@ -60,12 +63,14 @@ export function setProjectVersion(rawVersion) {
 
   const packageJson = readJson(versionFiles.packageJson);
   const tauriConf = readJson(versionFiles.tauriConf);
+  const versionJson = readJson(versionFiles.versionJson);
   const cargoTomlContent = readFileSync(versionFiles.cargoToml, "utf8");
 
   const previous = {
     packageJson: packageJson.version,
     cargoToml: readCargoVersion(cargoTomlContent),
     tauriConf: tauriConf.version,
+    versionJson: versionJson.version,
   };
 
   if (previous.packageJson !== version) {
@@ -75,6 +80,10 @@ export function setProjectVersion(rawVersion) {
   if (previous.tauriConf !== version) {
     tauriConf.version = version;
     writeJson(versionFiles.tauriConf, tauriConf);
+  }
+  if (previous.versionJson !== version) {
+    versionJson.version = version;
+    writeJson(versionFiles.versionJson, versionJson);
   }
   if (previous.cargoToml !== version) {
     const nextCargoTomlContent = cargoTomlContent.replace(
@@ -101,6 +110,11 @@ export function setProjectVersion(rawVersion) {
       {
         file: "src-tauri/tauri.conf.json",
         from: previous.tauriConf,
+        to: version,
+      },
+      {
+        file: "src-next/public/version.json",
+        from: previous.versionJson,
         to: version,
       },
     ],

@@ -12,6 +12,15 @@ interface RankingQuery {
   page: number;
   pageSize: number;
   season?: string;
+  username?: string;
+}
+
+type LeaderboardApiMode = "world" | "power";
+
+interface ParsedLeaderboardPayload {
+  entries: RankingEntry[];
+  usersById: Record<string, Record<string, unknown>>;
+  totalCount?: number;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -55,115 +64,155 @@ function firstString(values: unknown[]): string | undefined {
   return undefined;
 }
 
-async function safeRequest(request: ScreepsRequest): Promise<ScreepsResponse | undefined> {
-  try {
-    const response = await screepsRequest(request);
-    return response.ok ? response : undefined;
-  } catch {
-    return undefined;
-  }
+function toLeaderboardApiMode(mode: RankingMode): LeaderboardApiMode {
+  return mode === "power" ? "power" : "world";
 }
 
-function flattenRecords(payload: unknown, depth: number, sink: Record<string, unknown>[]): void {
-  if (depth > 5 || payload === null || payload === undefined) {
-    return;
+function normalizeRank(value: unknown): number | undefined {
+  const rank = asNumber(value);
+  if (rank === undefined) {
+    return undefined;
   }
-
-  if (Array.isArray(payload)) {
-    for (const item of payload) {
-      flattenRecords(item, depth + 1, sink);
-    }
-    return;
+  // Screeps leaderboard ranks are zero-based in payload, display as one-based.
+  if (rank >= 0) {
+    return Math.floor(rank) + 1;
   }
-
-  const record = asRecord(payload);
-  if (!record) {
-    return;
-  }
-
-  sink.push(record);
-  for (const value of Object.values(record)) {
-    flattenRecords(value, depth + 1, sink);
-  }
+  return Math.floor(rank);
 }
 
 function extractSeasons(payload: unknown): string[] {
+  const root = asRecord(payload);
+  const seasonsPayload = asArray(root?.seasons ?? payload);
   const seasons = new Set<string>();
-  const records: Record<string, unknown>[] = [];
-  flattenRecords(payload, 0, records);
 
-  // 匹配赛季格式 (YYYY) 或月度格式 (YYYY-MM)
-  const seasonPattern = /^\d{4}(-\d{2})?/;
-
-  for (const record of records) {
-    for (const value of Object.values(record)) {
-      const season = asString(value);
-      if (season && seasonPattern.test(season)) {
+  for (const rawSeason of seasonsPayload) {
+    if (typeof rawSeason === "string") {
+      const season = rawSeason.trim();
+      if (season) {
         seasons.add(season);
       }
+      continue;
     }
-  }
 
-  for (const entry of asArray(payload)) {
-    const season = asString(entry);
-    if (season && seasonPattern.test(season)) {
-      seasons.add(season);
+    const seasonRecord = asRecord(rawSeason);
+    if (!seasonRecord) {
+      continue;
+    }
+    const seasonId = firstString([seasonRecord._id, seasonRecord.id, seasonRecord.season]);
+    if (seasonId) {
+      seasons.add(seasonId);
     }
   }
 
   return [...seasons].sort((left, right) => right.localeCompare(left));
 }
 
-function extractMetrics(record: Record<string, unknown>): Record<string, number | null> {
-  const metrics: Record<string, number | null> = {};
-  for (const [key, value] of Object.entries(record)) {
-    const numeric = asNumber(value);
-    if (numeric !== undefined) {
-      metrics[key] = numeric;
+function parseUsersById(payload: unknown): Record<string, Record<string, unknown>> {
+  const root = asRecord(payload) ?? {};
+  const users = asRecord(root.users) ?? {};
+  const usersById: Record<string, Record<string, unknown>> = {};
+
+  for (const [key, value] of Object.entries(users)) {
+    const parsed = asRecord(value);
+    if (parsed) {
+      usersById[key] = parsed;
     }
   }
-  return metrics;
+
+  return usersById;
 }
 
-function extractEntries(payload: unknown, pageSize: number): RankingEntry[] {
-  const records: Record<string, unknown>[] = [];
-  flattenRecords(payload, 0, records);
+function parseRankingRecord(
+  payload: unknown,
+  usersById: Record<string, Record<string, unknown>>,
+  mode: RankingMode,
+  fallbackUsername?: string,
+): RankingEntry | undefined {
+  const record = asRecord(payload);
+  if (!record) {
+    return undefined;
+  }
 
+  const userId = firstString([record.user, record.userId]);
+  const userInfo = userId ? usersById[userId] : undefined;
+  const username = firstString([userInfo?.username, record.username, record.name, fallbackUsername, userId]);
+  if (!username) {
+    return undefined;
+  }
+
+  const metricKey = mode === "power" ? "power" : "score";
+  const metricValue = asNumber(record.score) ?? asNumber(record.power) ?? asNumber(record.value);
+  const metrics: Record<string, number | null> = {
+    [metricKey]: metricValue ?? null,
+  };
+
+  return {
+    username,
+    rank: normalizeRank(record.rank),
+    metrics,
+  };
+}
+
+function parseLeaderboardListPayload(payload: unknown, pageSize: number, mode: RankingMode): ParsedLeaderboardPayload {
+  const root = asRecord(payload) ?? {};
+  const list = asArray(root.list);
+  const usersById = parseUsersById(payload);
   const entries: RankingEntry[] = [];
-  for (const record of records) {
-    const username = firstString([
-      record.username,
-      asRecord(record.user)?.username,
-      record.user,
-      record.name,
-    ]);
 
-    if (!username) {
+  for (const item of list) {
+    const parsed = parseRankingRecord(item, usersById, mode);
+    if (!parsed) {
       continue;
     }
-
-    const rank = asNumber(record.rank) ?? asNumber(record.place) ?? asNumber(record.index);
-    entries.push({
-      username,
-      rank,
-      metrics: extractMetrics(record),
-    });
-
+    entries.push(parsed);
     if (entries.length >= pageSize) {
       break;
     }
   }
 
-  return entries;
+  return {
+    entries,
+    usersById,
+    totalCount: asNumber(root.count),
+  };
 }
 
-function collectDimensions(entries: RankingEntry[]): string[] {
-  const preferred = ["score", "gcl", "power", "cpu", "pixels"];
-  const set = new Set<string>();
+function parseFindPayload(
+  payload: unknown,
+  season: string | undefined,
+  usersById: Record<string, Record<string, unknown>>,
+  mode: RankingMode,
+  username: string,
+): RankingEntry | undefined {
+  const root = asRecord(payload) ?? {};
+  const list = asArray(root.list);
+
+  if (list.length > 0) {
+    let selected: unknown;
+
+    if (season) {
+      selected = list.find((item) => asString(asRecord(item)?.season) === season);
+    }
+    if (!selected) {
+      selected = list[list.length - 1];
+    }
+
+    return parseRankingRecord(selected, usersById, mode, username);
+  }
+
+  return parseRankingRecord(root, usersById, mode, username);
+}
+
+function collectDimensions(entries: RankingEntry[], mode: RankingMode): string[] {
+  const defaultDimension = mode === "power" ? "power" : "score";
+  const preferred = mode === "power" ? ["power", "score"] : ["score", "power"];
+  const set = new Set<string>([defaultDimension]);
 
   for (const entry of entries) {
-    for (const key of Object.keys(entry.metrics)) {
-      set.add(key);
+    for (const [key, value] of Object.entries(entry.metrics)) {
+      if (value !== null && value !== undefined) {
+        set.add(key);
+      }
     }
   }
 
@@ -185,87 +234,93 @@ function collectDimensions(entries: RankingEntry[]): string[] {
   return output;
 }
 
-async function fetchLeaderboardPayload(
+async function safeRequest(request: ScreepsRequest): Promise<ScreepsResponse | undefined> {
+  try {
+    const response = await screepsRequest(request);
+    return response.ok ? response : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchLeaderboardListPayload(
   baseUrl: string,
   mode: RankingMode,
   page: number,
   pageSize: number,
-  season?: string
+  season?: string,
 ): Promise<ScreepsResponse | undefined> {
+  const apiMode = toLeaderboardApiMode(mode);
   const offset = Math.max(0, (page - 1) * pageSize);
+  const candidates: ScreepsRequest[] = [];
 
-  // 根据模式确定 API 参数
-  let modeValue: string;
-  let useSeasonParam = false;
-
-  switch (mode) {
-    case "global":
-      modeValue = "world";
-      break;
-    case "season":
-      modeValue = "season";
-      useSeasonParam = true;
-      break;
-    case "monthly":
-      modeValue = "monthly";
-      useSeasonParam = true;
-      break;
-    case "power":
-      modeValue = "power";
-      break;
-    default:
-      modeValue = "world";
-  }
-
-  const candidates: ScreepsRequest[] = [
-    {
-      baseUrl,
-      endpoint: "/api/leaderboard/list",
-      method: "GET",
-      query: {
-        mode: modeValue,
-        limit: pageSize,
-        offset,
-        ...(useSeasonParam && season ? { season } : {}),
-      },
-    },
-  ];
-
-  // season 模式额外获取 world 数据
-  if (mode === "season") {
+  if (season) {
     candidates.push({
       baseUrl,
       endpoint: "/api/leaderboard/list",
       method: "GET",
       query: {
-        mode: "world",
+        mode: apiMode,
+        season,
         limit: pageSize,
         offset,
-        ...(season ? { season } : {}),
       },
     });
   }
+
+  // Fallback for servers that still expose all-time list without season.
+  candidates.push({
+    baseUrl,
+    endpoint: "/api/leaderboard/list",
+    method: "GET",
+    query: {
+      mode: apiMode,
+      limit: pageSize,
+      offset,
+    },
+  });
 
   try {
     const responses = await screepsBatchRequest(candidates, {
       maxConcurrency: Math.min(4, candidates.length),
     });
-    for (const response of responses) {
-      if (response.ok) {
+    const successful = responses.filter((response) => response.ok);
+    if (successful.length === 0) {
+      return undefined;
+    }
+
+    for (const response of successful) {
+      const list = asArray(asRecord(response.data)?.list);
+      if (list.length > 0) {
         return response;
       }
     }
-  } catch {
-    // Ignore bridge-level failures and keep existing undefined fallback behavior.
-  }
 
-  return undefined;
+    return successful[0];
+  } catch {
+    return undefined;
+  }
 }
 
-export async function fetchRankingSnapshot(
-  rawBaseUrl: string,
-  query: RankingQuery
-): Promise<RankingSnapshot> {
+async function fetchUserLeaderboardEntry(
+  baseUrl: string,
+  mode: RankingMode,
+  username: string,
+  season?: string,
+): Promise<ScreepsResponse | undefined> {
+  return safeRequest({
+    baseUrl,
+    endpoint: "/api/leaderboard/find",
+    method: "GET",
+    query: {
+      mode: toLeaderboardApiMode(mode),
+      username,
+      ...(season ? { season } : {}),
+    },
+  });
+}
+
+export async function fetchRankingSnapshot(rawBaseUrl: string, query: RankingQuery): Promise<RankingSnapshot> {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
   const page = Math.max(1, query.page);
   const pageSize = Math.max(5, Math.min(50, query.pageSize));
@@ -275,13 +330,19 @@ export async function fetchRankingSnapshot(
     endpoint: "/api/leaderboard/seasons",
     method: "GET",
   });
-
   const seasons = extractSeasons(seasonsResponse?.data);
   const season = query.season ?? seasons[0];
 
-  const listResponse = await fetchLeaderboardPayload(baseUrl, query.mode, page, pageSize, season);
-  const entries = extractEntries(listResponse?.data, pageSize);
-  const dimensions = collectDimensions(entries);
+  const listResponse = await fetchLeaderboardListPayload(baseUrl, query.mode, page, pageSize, season);
+  const parsedList = parseLeaderboardListPayload(listResponse?.data, pageSize, query.mode);
+  const dimensions = collectDimensions(parsedList.entries, query.mode);
+
+  let selfEntry: RankingEntry | undefined;
+  const username = asString(query.username);
+  if (username) {
+    const selfResponse = await fetchUserLeaderboardEntry(baseUrl, query.mode, username, season);
+    selfEntry = parseFindPayload(selfResponse?.data, season, parsedList.usersById, query.mode, username);
+  }
 
   return {
     fetchedAt: new Date().toISOString(),
@@ -289,8 +350,10 @@ export async function fetchRankingSnapshot(
     mode: query.mode,
     season,
     seasons,
-    entries,
+    entries: parsedList.entries,
+    selfEntry,
     dimensions,
+    totalCount: parsedList.totalCount,
     page,
     pageSize,
   };

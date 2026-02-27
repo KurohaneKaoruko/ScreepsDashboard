@@ -599,6 +599,18 @@ a {
   align-items: flex-end;
 }
 
+.rankings-pagination {
+  justify-content: center;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.rankings-pagination .hint-text {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+}
+
 .mini-actions {
   display: inline-flex;
   gap: 6px;
@@ -952,6 +964,47 @@ a {
   min-width: 0;
   max-width: 100%;
   padding: 14px;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.settings-card-span-full {
+  grid-column: 1 / -1;
+}
+
+.settings-footer {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-footer-label {
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settings-footer-value {
+  color: var(--text-main);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .resources-panel {
@@ -2046,9 +2099,17 @@ a {
 .rankings-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: clamp(420px, 76vw, 560px);
   font-size: 0.74rem;
   font-variant-numeric: tabular-nums;
+}
+
+.dense-table {
+  min-width: clamp(420px, 76vw, 560px);
+}
+
+.rankings-table {
+  table-layout: fixed;
+  min-width: 0;
 }
 
 .dense-table th,
@@ -2059,6 +2120,11 @@ a {
   padding: 7px 8px;
   text-align: left;
   white-space: nowrap;
+}
+
+.rankings-table th,
+.rankings-table td {
+  padding-inline: 5px;
 }
 
 .dense-table th,
@@ -2081,6 +2147,48 @@ a {
 .dense-table .numeric,
 .rankings-table .numeric {
   text-align: right;
+}
+
+.rankings-table .rankings-col-rank {
+  width: 1.5rem;
+}
+
+.rankings-table .rankings-col-player {
+  width: 6.4rem;
+}
+
+.rankings-table .rankings-col-delta {
+  width: 2.2rem;
+}
+
+.rankings-table .rankings-col-metric {
+  width: 6.1rem;
+}
+
+.rankings-table th:nth-child(3),
+.rankings-table td:nth-child(3) {
+  padding-right: 9px;
+}
+
+.rankings-table th:nth-child(4),
+.rankings-table td:nth-child(4) {
+  padding-left: 11px;
+  border-left: 1px solid var(--border);
+}
+
+.rankings-table .rankings-col-player,
+.rankings-table .rankings-player-col,
+.rankings-table .rankings-player-cell {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.rankings-table .rankings-player-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table-link {
@@ -4137,6 +4245,40 @@ a {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .market-v2-resource-card-compound[data-cols="4"] {
+    min-height: 80px;
+    padding: 6px 5px;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "hero"
+      "name";
+    gap: 4px;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .market-v2-resource-card-compound[data-cols="4"] .market-v2-card-hero {
+    min-height: 34px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .market-v2-resource-card-compound[data-cols="4"] .market-v2-card-code {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  .market-v2-resource-card-compound[data-cols="4"] .market-v2-resource-name {
+    min-height: 1.8em;
+    max-width: 100%;
+    justify-content: center;
+    text-align: center;
+    font-size: 0.58rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .market-v2-orders-grid {
     grid-template-columns: 1fr;
     min-width: 0;
@@ -4226,6 +4368,16 @@ a {
 
   .card {
     padding: 9px;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .chat-thread-shell {
@@ -4460,6 +4612,27 @@ a {
     display: grid;
   }
 
+  .profile-growth-bars .metric-bar {
+    border-color: #262626;
+    background: #0a0a0a;
+  }
+
+  .profile-growth-bars .metric-track {
+    background: #141414;
+  }
+
+  .profile-growth-bars .metric-fill {
+    background: linear-gradient(90deg, #3a3a3a 0%, #6c6c6c 100%);
+  }
+
+  .profile-growth-bars .metric-bar-cpu .metric-fill {
+    background: linear-gradient(90deg, #5b7232 0%, #9ec65a 100%);
+  }
+
+  .profile-growth-bars .metric-bar-mem .metric-fill {
+    background: linear-gradient(90deg, #3f6196 0%, #7ea9ff 100%);
+  }
+
   .progress-ring-grid.progress-ring-grid-system {
     width: fit-content;
     max-width: 100%;
@@ -4503,9 +4676,13 @@ a {
     );
   }
 
-  .dense-table,
-  .rankings-table {
+  .dense-table {
     min-width: 500px;
+    font-size: 0.72rem;
+  }
+
+  .rankings-table {
+    min-width: 0;
     font-size: 0.72rem;
   }
 
@@ -4522,6 +4699,11 @@ a {
   .rankings-table th,
   .rankings-table td {
     padding: 6px 7px;
+  }
+
+  .rankings-table th,
+  .rankings-table td {
+    padding: 6px 4px;
   }
 
   .entity-row {
@@ -4606,30 +4788,6 @@ a {
     width: 32px !important;
     height: 32px !important;
     left: 6px;
-  }
-
-  .market-v2-resource-card-compound[data-cols="4"] {
-    min-height: 88px;
-    padding: 8px 7px;
-    grid-template-columns: 1fr;
-    text-align: center;
-  }
-
-  .market-v2-resource-card-compound[data-cols="4"] .market-v2-card-hero {
-    min-height: 34px;
-    justify-content: center;
-  }
-
-  .market-v2-resource-card-compound[data-cols="4"] .market-v2-card-code {
-    justify-self: center;
-    margin-left: 0;
-  }
-
-  .market-v2-resource-card-compound[data-cols="4"] .market-v2-resource-name {
-    justify-content: center;
-    text-align: center;
-    min-height: 2.2em;
-    font-size: 0.48rem;
   }
 
   .chat-bubble {
@@ -4819,9 +4977,12 @@ a {
     );
   }
 
-  .dense-table,
-  .rankings-table {
+  .dense-table {
     min-width: 420px;
+  }
+
+  .rankings-table {
+    min-width: 0;
   }
 
   .market-table {

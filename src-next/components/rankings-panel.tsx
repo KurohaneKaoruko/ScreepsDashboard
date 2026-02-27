@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
 import { fetchRankingSnapshot } from "../lib/screeps/rankings";
@@ -10,8 +10,6 @@ import { useAuthStore } from "../stores/auth-store";
 
 const DEFAULT_SERVER_URL = "https://screeps.com";
 const PAGE_SIZE = 20;
-
-type SortMode = "rank" | "username" | "metric";
 
 function formatMetric(value: number | null | undefined): string {
   if (value === undefined || value === null) {
@@ -43,6 +41,19 @@ function trendText(delta: number | undefined): string {
   return `-${Math.abs(delta)}`;
 }
 
+function resolveDimensionLabel(
+  dimension: string,
+  t: (key: "rankings.metricScore" | "rankings.metricPower") => string,
+): string {
+  if (dimension === "score") {
+    return t("rankings.metricScore");
+  }
+  if (dimension === "power") {
+    return t("rankings.metricPower");
+  }
+  return dimension;
+}
+
 export function RankingsPanel() {
   const { t } = useI18n();
   const session = useAuthStore((state) => state.session);
@@ -55,20 +66,19 @@ export function RankingsPanel() {
   const [mode, setMode] = useState<RankingMode>("global");
   const [season, setSeason] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
-  const [selectedDimension, setSelectedDimension] = useState<string>("score");
-  const [sortMode, setSortMode] = useState<SortMode>("rank");
-  const [sortDesc, setSortDesc] = useState(false);
   const [nameFilter, setNameFilter] = useState("");
   const [onlyCurrentUser, setOnlyCurrentUser] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   const { data, error, isLoading, mutate } = useSWR(
-    ["rankings", baseUrl, mode, season, page],
+    ["rankings", baseUrl, mode, season, page, session?.username ?? ""],
     () =>
       fetchRankingSnapshot(baseUrl, {
         mode,
         season,
         page,
         pageSize: PAGE_SIZE,
+        username: session?.username,
       }),
     {
       revalidateOnFocus: false,
@@ -76,25 +86,8 @@ export function RankingsPanel() {
     }
   );
 
-  const dimensions = data?.dimensions ?? [];
-  const visibleDimensions = useMemo(() => {
-    if (!dimensions.length) {
-      return [selectedDimension];
-    }
-    if (!dimensions.includes(selectedDimension)) {
-      return dimensions;
-    }
-    return [selectedDimension, ...dimensions.filter((item) => item !== selectedDimension)];
-  }, [dimensions, selectedDimension]);
-
-  useEffect(() => {
-    if (!dimensions.length) {
-      return;
-    }
-    if (!dimensions.includes(selectedDimension)) {
-      setSelectedDimension(dimensions[0]);
-    }
-  }, [dimensions, selectedDimension]);
+  const activeDimension = mode === "power" ? "power" : "score";
+  const visibleDimensions = [activeDimension];
 
   const trendMap = useMemo(() => {
     const output = new Map<string, number>();
@@ -127,65 +120,85 @@ export function RankingsPanel() {
     previousRanksRef.current = next;
   }, [data?.entries, data?.fetchedAt]);
 
-  const sortedEntries = useMemo(() => {
-    const entries = [...(data?.entries ?? [])];
-
-    entries.sort((left, right) => {
-      if (sortMode === "username") {
-        return left.username.localeCompare(right.username);
-      }
-
-      if (sortMode === "metric") {
-        const leftMetric = left.metrics[selectedDimension];
-        const rightMetric = right.metrics[selectedDimension];
-        const leftMissing = leftMetric === undefined || leftMetric === null;
-        const rightMissing = rightMetric === undefined || rightMetric === null;
-
-        if (leftMissing && rightMissing) {
-          return 0;
-        }
-        if (leftMissing) {
-          return -1;
-        }
-        if (rightMissing) {
-          return 1;
-        }
-
-        return leftMetric - rightMetric;
-      }
-
-      const leftRank = left.rank ?? Number.MAX_SAFE_INTEGER;
-      const rightRank = right.rank ?? Number.MAX_SAFE_INTEGER;
-      return leftRank - rightRank;
-    });
-
-    return sortDesc ? entries.reverse() : entries;
-  }, [data?.entries, selectedDimension, sortDesc, sortMode]);
+  const sortedEntries = useMemo(() => data?.entries ?? [], [data?.entries]);
 
   const currentUser = session?.username.trim().toLowerCase();
   const currentUserEntry = currentUser
-    ? sortedEntries.find((entry) => entry.username.toLowerCase() === currentUser)
+    ? sortedEntries.find((entry) => entry.username.toLowerCase() === currentUser) ??
+      (data?.selfEntry?.username.toLowerCase() === currentUser ? data.selfEntry : undefined)
     : undefined;
 
   const visibleEntries = useMemo(() => {
     const keyword = nameFilter.trim().toLowerCase();
-
-    return sortedEntries.filter((entry) => {
-      if (onlyCurrentUser && (!currentUser || entry.username.toLowerCase() !== currentUser)) {
-        return false;
-      }
-
+    const filtered = sortedEntries.filter((entry) => {
       if (!keyword) {
         return true;
       }
 
       return entry.username.toLowerCase().includes(keyword);
     });
-  }, [currentUser, nameFilter, onlyCurrentUser, sortedEntries]);
+
+    if (!onlyCurrentUser) {
+      return filtered;
+    }
+
+    if (!currentUser) {
+      return [];
+    }
+
+    const inPage = filtered.find((entry) => entry.username.toLowerCase() === currentUser);
+    if (inPage) {
+      return [inPage];
+    }
+
+    if (
+      data?.selfEntry &&
+      data.selfEntry.username.toLowerCase() === currentUser &&
+      (!keyword || data.selfEntry.username.toLowerCase().includes(keyword))
+    ) {
+      return [data.selfEntry];
+    }
+
+    return [];
+  }, [currentUser, data?.selfEntry, nameFilter, onlyCurrentUser, sortedEntries]);
 
   const topMetric = visibleEntries.find(
-    (entry) => entry.metrics[selectedDimension] !== undefined && entry.metrics[selectedDimension] !== null
-  )?.metrics[selectedDimension];
+    (entry) => entry.metrics[activeDimension] !== undefined && entry.metrics[activeDimension] !== null
+  )?.metrics[activeDimension];
+  const selectedDimensionLabel = resolveDimensionLabel(activeDimension, t);
+  const modeMetricHint = mode === "power" ? t("rankings.metricHelpPower") : t("rankings.metricHelpWorld");
+  const hasNextPage =
+    typeof data?.totalCount === "number" && data.totalCount > 0
+      ? page * PAGE_SIZE < data.totalCount
+      : Boolean(data?.entries.length);
+
+  const jumpToSearchedUser = useCallback(async () => {
+    const username = nameFilter.trim();
+    if (!username) {
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const snapshot = await fetchRankingSnapshot(baseUrl, {
+        mode,
+        season,
+        page: 1,
+        pageSize: PAGE_SIZE,
+        username,
+      });
+      const rank = snapshot.selfEntry?.rank;
+      if (rank === undefined) {
+        return;
+      }
+      const targetPage = Math.max(1, Math.floor((rank - 1) / PAGE_SIZE) + 1);
+      if (targetPage !== page) {
+        setPage(targetPage);
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  }, [baseUrl, mode, nameFilter, page, season]);
 
   return (
     <section className="panel dashboard-panel">
@@ -212,43 +225,21 @@ export function RankingsPanel() {
             }}
           >
             <option value="global">{t("rankings.global")}</option>
-            <option value="season">{t("rankings.season")}</option>
-            <option value="monthly">{t("rankings.monthly")}</option>
             <option value="power">{t("rankings.power")}</option>
           </select>
         </label>
 
-        {(mode === "season" || mode === "monthly") ? (
-          <label className="field compact-field">
-            <span>{t("rankings.season")}</span>
-            <select
-              value={season ?? data?.seasons[0] ?? ""}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setSeason(value || undefined);
-                setPage(1);
-              }}
-            >
-              {(data?.seasons ?? []).map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-
         <label className="field compact-field">
-          <span>{t("rankings.dimension")}</span>
+          <span>{t("rankings.season")}</span>
           <select
-            value={selectedDimension}
+            value={season ?? data?.season ?? data?.seasons[0] ?? ""}
             onChange={(event) => {
-              setSelectedDimension(event.currentTarget.value);
-              setSortMode("metric");
-              setSortDesc(true);
+              const value = event.currentTarget.value;
+              setSeason(value || undefined);
+              setPage(1);
             }}
           >
-            {visibleDimensions.map((item) => (
+            {(data?.seasons ?? []).map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
@@ -257,33 +248,29 @@ export function RankingsPanel() {
         </label>
 
         <label className="field compact-field">
-          <span>Sort</span>
-          <select
-            value={sortMode}
-            onChange={(event) => setSortMode(event.currentTarget.value as SortMode)}
-          >
-            <option value="rank">{t("rooms.rank")}</option>
-            <option value="username">{t("rooms.player")}</option>
-            <option value="metric">{t("rankings.dimension")}</option>
-          </select>
+          <span>{t("rankings.searchUser")}</span>
+          <input
+            value={nameFilter}
+            onChange={(event) => setNameFilter(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") {
+                return;
+              }
+              event.preventDefault();
+              void jumpToSearchedUser();
+            }}
+            placeholder={t("rankings.searchPlaceholder")}
+          />
         </label>
 
         <button
           className="secondary-button"
-          onClick={() => setSortDesc((current) => !current)}
+          onClick={() => void jumpToSearchedUser()}
+          disabled={isSearching || nameFilter.trim().length === 0}
           type="button"
         >
-          {sortDesc ? "DESC" : "ASC"}
+          {t("rankings.jump")}
         </button>
-
-        <label className="field compact-field">
-          <span>Filter</span>
-          <input
-            value={nameFilter}
-            onChange={(event) => setNameFilter(event.currentTarget.value)}
-            placeholder="username"
-          />
-        </label>
 
         <button
           className={onlyCurrentUser ? "secondary-button" : "ghost-button"}
@@ -293,6 +280,7 @@ export function RankingsPanel() {
           ONLY ME
         </button>
       </div>
+      <p className="hint-text">{modeMetricHint}</p>
 
       {error ? (
         <p className="error-text">
@@ -311,7 +299,7 @@ export function RankingsPanel() {
             Visible {visibleEntries.length} / {sortedEntries.length}
           </span>
           <span className="entity-chip">
-            Top {selectedDimension}: {formatMetric(topMetric)}
+            Top {selectedDimensionLabel}: {formatMetric(topMetric)}
           </span>
         </div>
       ) : null}
@@ -322,14 +310,22 @@ export function RankingsPanel() {
         ) : visibleEntries.length ? (
           <div className="rankings-table-wrap">
             <table className="rankings-table">
+              <colgroup>
+                <col className="rankings-col-rank" />
+                <col className="rankings-col-player" />
+                <col className="rankings-col-delta" />
+                {visibleDimensions.map((dimension) => (
+                  <col className="rankings-col-metric" key={`col-${dimension}`} />
+                ))}
+              </colgroup>
               <thead>
                 <tr>
                   <th className="numeric">{t("rooms.rank")}</th>
-                  <th>{t("rooms.player")}</th>
-                  <th className="numeric">DELTA</th>
+                  <th className="rankings-player-col">{t("rooms.player")}</th>
+                  <th className="numeric">{t("rankings.delta")}</th>
                   {visibleDimensions.map((dimension) => (
                     <th className="numeric" key={dimension}>
-                      {dimension}
+                      {resolveDimensionLabel(dimension, t)}
                     </th>
                   ))}
                 </tr>
@@ -346,7 +342,9 @@ export function RankingsPanel() {
                       className={isCurrentUser ? "row-highlight" : undefined}
                     >
                       <td className="numeric">{entry.rank ?? "N/A"}</td>
-                      <td>{entry.username}</td>
+                      <td className="rankings-player-cell" title={entry.username}>
+                        <span className="rankings-player-text">{entry.username}</span>
+                      </td>
                       <td className={`numeric ${trendClass(delta)}`}>{trendText(delta)}</td>
                       {visibleDimensions.map((dimension) => (
                         <td className="numeric" key={`${entry.username}-${dimension}`}>
@@ -363,7 +361,7 @@ export function RankingsPanel() {
           <p className="hint-text">{t("rankings.empty")}</p>
         )}
 
-        <div className="inline-actions">
+        <div className="inline-actions rankings-pagination">
           <button
             className="secondary-button"
             onClick={() => setPage((current) => Math.max(1, current - 1))}
@@ -377,7 +375,7 @@ export function RankingsPanel() {
           <button
             className="secondary-button"
             onClick={() => setPage((current) => current + 1)}
-            disabled={!data?.entries.length}
+            disabled={!hasNextPage}
           >
             {t("rankings.next")}
           </button>
