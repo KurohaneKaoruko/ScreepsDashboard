@@ -370,7 +370,6 @@ jobs:
     needs:
       - publish_desktop
     runs-on: macos-latest
-    continue-on-error: true
     permissions:
       contents: write
     steps:
@@ -406,9 +405,26 @@ jobs:
             pnpm run tauri -- ios init
           fi
 
-      - name: Build iOS bundle (best effort)
-        continue-on-error: true
+      - name: Build iOS bundle
         run: pnpm run package:target -- ios
+
+      - name: Inspect iOS build outputs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "[ios] Dist directory snapshot:"
+          if [ -d "dist" ]; then
+            find dist -maxdepth 3 -print
+          else
+            echo "[ios] dist directory not found."
+          fi
+          echo "[ios] Native build candidates:"
+          if [ -d "src-tauri/gen/apple/build" ]; then
+            find src-tauri/gen/apple/build -maxdepth 8 \( -name "*.ipa" -o -name "*.app" -o -name "*.xcarchive" \) -print
+          else
+            echo "[ios] src-tauri/gen/apple/build not found."
+          fi
 
       - name: Prepare iOS artifacts
         id: ios_assets
@@ -418,7 +434,24 @@ jobs:
           set -euo pipefail
           mkdir -p dist/ios-upload
           shopt -s nullglob
-          for item in dist/ios/*; do
+
+          ios_candidates=()
+          if [ -d "dist/ios" ]; then
+            while IFS= read -r -d '' item; do
+              ios_candidates+=("$item")
+            done < <(find dist/ios -maxdepth 4 \( -name "*.ipa" -o -name "*.app" -o -name "*.xcarchive" \) -print0)
+          fi
+
+          if [ ${#ios_candidates[@]} -eq 0 ] && [ -d "src-tauri/gen/apple/build" ]; then
+            while IFS= read -r -d '' item; do
+              ios_candidates+=("$item")
+            done < <(find src-tauri/gen/apple/build -maxdepth 8 \( -name "*.ipa" -o -name "*.app" -o -name "*.xcarchive" \) -print0)
+          fi
+
+          for item in "${ios_candidates[@]}"; do
+            if [[ "$item" == *".xcarchive/"* ]]; then
+              continue
+            fi
             base="$(basename "$item")"
             if [ -f "$item" ]; then
               cp "$item" "dist/ios-upload/${base}"
@@ -461,8 +494,12 @@ jobs:
           done
           if compgen -G "dist/ios-upload/*" > /dev/null; then
             echo "has_assets=true" >> "$GITHUB_OUTPUT"
+            echo "[ios] Prepared iOS artifacts:"
+            find dist/ios-upload -mindepth 1 -maxdepth 1 -print
           else
             echo "has_assets=false" >> "$GITHUB_OUTPUT"
+            echo "[ios] No installable iOS artifacts were produced."
+            exit 1
           fi
 
       - name: Upload iOS artifacts to release
