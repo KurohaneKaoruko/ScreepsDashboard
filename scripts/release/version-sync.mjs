@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +8,7 @@ export const projectRoot = resolve(scriptDir, "..", "..");
 export const versionFiles = Object.freeze({
   packageJson: resolve(projectRoot, "package.json"),
   cargoToml: resolve(projectRoot, "src-tauri", "Cargo.toml"),
+  cargoLock: resolve(projectRoot, "src-tauri", "Cargo.lock"),
   tauriConf: resolve(projectRoot, "src-tauri", "tauri.conf.json"),
   versionJson: resolve(projectRoot, "src-web", "public", "version.json"),
 });
@@ -65,6 +66,13 @@ export function setProjectVersion(rawVersion) {
   const tauriConf = readJson(versionFiles.tauriConf);
   const versionJson = readJson(versionFiles.versionJson);
   const cargoTomlContent = readFileSync(versionFiles.cargoToml, "utf8");
+  const cargoLockContent = existsSync(versionFiles.cargoLock)
+    ? readFileSync(versionFiles.cargoLock, "utf8")
+    : null;
+  const cargoLockPattern = new RegExp(
+    `(name = "${packageJson.name}"\\s*\\nversion = ")([^"]+)(")`
+  );
+  const previousCargoLockVersion = cargoLockContent?.match(cargoLockPattern)?.[2];
 
   const previous = {
     packageJson: packageJson.version,
@@ -92,6 +100,15 @@ export function setProjectVersion(rawVersion) {
     );
     writeFileSync(versionFiles.cargoToml, nextCargoTomlContent, "utf8");
   }
+  // Keep the workspace entry in Cargo.lock in sync: `tauri build` runs cargo
+  // with --locked in CI, which fails when the lock file lags behind Cargo.toml.
+  if (cargoLockContent && previousCargoLockVersion && previousCargoLockVersion !== version) {
+    const nextCargoLockContent = cargoLockContent.replace(
+      cargoLockPattern,
+      `$1${version}$3`,
+    );
+    writeFileSync(versionFiles.cargoLock, nextCargoLockContent, "utf8");
+  }
 
   return {
     version,
@@ -107,6 +124,15 @@ export function setProjectVersion(rawVersion) {
         from: previous.cargoToml,
         to: version,
       },
+      ...(cargoLockContent && previousCargoLockVersion
+        ? [
+            {
+              file: "src-tauri/Cargo.lock",
+              from: previousCargoLockVersion,
+              to: version,
+            },
+          ]
+        : []),
       {
         file: "src-tauri/tauri.conf.json",
         from: previous.tauriConf,
