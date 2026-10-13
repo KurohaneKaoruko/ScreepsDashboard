@@ -160,7 +160,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - publish_desktop
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
@@ -185,17 +185,21 @@ jobs:
         run: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK and NDK
         run: |
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;${NDK_VERSION}"
+          set -o pipefail
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;${NDK_VERSION}" 2>&1 | tee sdkmanager.log || {
+            tail -n 30 sdkmanager.log | while IFS= read -r line; do echo "::error::sdkmanager: ${line:0:400}"; done
+            exit 1
+          }
           yes | sdkmanager --licenses
           echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
@@ -232,10 +236,20 @@ jobs:
           key: android-keystore-${{ github.repository_id }}-${{ steps.android_signing_defaults.outputs.name_hash }}
 
       - name: Build Android APK
-        run: pnpm run package:target -- android-apk
+        run: |
+          set -o pipefail
+          pnpm run package:target -- android-apk 2>&1 | tee android-apk-build.log || {
+            tail -n 40 android-apk-build.log | while IFS= read -r line; do echo "::error::apk-build: ${line:0:400}"; done
+            exit 1
+          }
 
       - name: Build Android AAB
-        run: pnpm run package:target -- android-aab
+        run: |
+          set -o pipefail
+          pnpm run package:target -- android-aab 2>&1 | tee android-aab-build.log || {
+            tail -n 40 android-aab-build.log | while IFS= read -r line; do echo "::error::aab-build: ${line:0:400}"; done
+            exit 1
+          }
 
       - name: Sign Android artifacts
         shell: bash
@@ -385,16 +399,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Initialize iOS project (best effort)
-        continue-on-error: true
+      - name: Initialize iOS project
         shell: bash
         run: |
-          if [ ! -d "src-tauri/gen/apple" ]; then
-            pnpm run tauri -- ios init
+          if [ -d "src-tauri/gen/apple" ]; then
+            echo "[ios] gen/apple already present, skipping init."
+            exit 0
           fi
+          set -o pipefail
+          pnpm run tauri -- ios init 2>&1 | tee ios-init.log || {
+            tail -n 40 ios-init.log | while IFS= read -r line; do echo "::error::ios-init: ${line:0:400}"; done
+            exit 1
+          }
 
       - name: Build iOS bundle
-        run: pnpm run package:target -- ios
+        run: |
+          set -o pipefail
+          # --no-sign: CI runners have no Apple signing identity; tauri then
+          # produces an unsigned IPA straight from the archive instead of
+          # going through the provisioning workflow (which would fail).
+          pnpm run package:target -- ios --no-sign 2>&1 | tee ios-build.log || {
+            tail -n 60 ios-build.log | while IFS= read -r line; do echo "::error::ios-build: ${line:0:400}"; done
+            exit 1
+          }
 
       - name: Inspect iOS build outputs
         if: always()
