@@ -7,7 +7,7 @@
     "beforeDevCommand": "npm run dev -- --port 38127",
     "devUrl": "http://localhost:38127",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../src-next/out"
+    "frontendDist": "../src-web/dist"
   },
   "app": {
     "windows": [

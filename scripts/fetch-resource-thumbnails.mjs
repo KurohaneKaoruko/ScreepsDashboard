@@ -6,11 +6,11 @@ import process from "node:process";
 
 const RESOURCE_META_PATH = path.resolve(
   process.cwd(),
-  "src-next/lib/screeps/resource-meta.ts"
+  "src-web/src/lib/screeps/resource-meta.ts"
 );
 const OUTPUT_DIR = path.resolve(
   process.cwd(),
-  "src-next/public/screeps-resource-thumbs"
+  "src-web/public/screeps-resource-thumbs"
 );
 const SOURCE_BASE_URL =
   "https://s3.amazonaws.com/static.screeps.com/upload/mineral-icons";

@@ -9,7 +9,7 @@ export const versionFiles = Object.freeze({
   packageJson: resolve(projectRoot, "package.json"),
   cargoToml: resolve(projectRoot, "src-tauri", "Cargo.toml"),
   tauriConf: resolve(projectRoot, "src-tauri", "tauri.conf.json"),
-  versionJson: resolve(projectRoot, "src-next", "public", "version.json"),
+  versionJson: resolve(projectRoot, "src-web", "public", "version.json"),
 });
 
 const semverPattern =
@@ -113,7 +113,7 @@ export function setProjectVersion(rawVersion) {
         to: version,
       },
       {
-        file: "src-next/public/version.json",
+        file: "src-web/public/version.json",
         from: previous.versionJson,
         to: version,
       },

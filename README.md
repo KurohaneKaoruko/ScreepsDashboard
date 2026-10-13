@@ -22,7 +22,7 @@ Screeps Dashboard 是一个基于 `Tauri 2 + Next.js 15` 的跨平台客户端�
 
 ## 技术栈
 
-- 前端：Next.js 15、React 19、TypeScript、SWR、Zustand
+- 前端：React 19、Vite 7、TypeScript、React Router 7（HashRouter）、SWR、Zustand
 - 客户端壳：Tauri 2
 - Rust 网络桥接：`reqwest`（`rustls-tls`）
 
@@ -30,11 +30,12 @@ Screeps Dashboard 是一个基于 `Tauri 2 + Next.js 15` 的跨平台客户端�
 
 ```text
 ScreepsDashboard/
-|-- src-next/                       # Next.js 前端
-|   |-- app/                        # 路由页面
-|   |-- components/                 # UI 组件
-|   |-- lib/screeps/                # Screeps API 适配与数据逻辑
-|   `-- stores/                     # Zustand 状态存储
+|-- src-web/                       # React + Vite 前端
+|   |-- src/routes.tsx             # 路由定义（HashRouter）
+|   |-- src/pages/                 # 页面组件
+|   |-- src/components/            # UI 组件
+|   |-- src/lib/screeps/           # Screeps API 适配与数据逻辑
+|   `-- src/stores/                # Zustand 状态存储
 |-- src-tauri/                      # Tauri + Rust
 |   |-- src/lib.rs                  # screeps_request / screeps_console_execute 命令实现
 |   `-- tauri.conf.json             # Tauri 配置
@@ -68,7 +69,7 @@ npm install
 npm run dev
 ```
 
-启动 Next.js 开发服务（实际目录为 `src-next/`）。
+启动 Vite 开发服务（实际目录为 `src-web/`）。
 
 ### 3) 桌面开发模式（Tauri）
 
@@ -116,7 +117,7 @@ npm run package:android:all
 npm run build
 ```
 
-`src-next/next.config.ts` 使用 `output: "export"`，构建产物输出到 `src-next/out`，并由 Tauri 读取。
+`npm run build` 通过 Vite 构建（`src-web/vite.config.ts`），产物输出到 `src-web/dist`，并由 Tauri 读取。路由使用 HashRouter，无需服务端 SPA fallback。
 
 ### 桌面发布包
 

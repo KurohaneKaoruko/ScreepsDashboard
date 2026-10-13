@@ -22,7 +22,7 @@ Screeps Dashboard is a cross-platform client built with `Tauri 2 + Next.js 15` f
 
 ## Tech Stack
 
-- Frontend: Next.js 15, React 19, TypeScript, SWR, Zustand
+- Frontend: React 19, Vite 7, TypeScript, React Router 7 (HashRouter), SWR, Zustand
 - Shell: Tauri 2
 - Rust HTTP bridge: `reqwest` (`rustls-tls`)
 
@@ -30,11 +30,12 @@ Screeps Dashboard is a cross-platform client built with `Tauri 2 + Next.js 15` f
 
 ```text
 ScreepsDashboard/
-|-- src-next/                       # Next.js frontend
-|   |-- app/                        # Routes/pages
-|   |-- components/                 # UI components
-|   |-- lib/screeps/                # Screeps API adapters and data logic
-|   `-- stores/                     # Zustand stores
+|-- src-web/                       # React + Vite frontend
+|   |-- src/routes.tsx             # Route definitions (HashRouter)
+|   |-- src/pages/                 # Page components
+|   |-- src/components/            # UI components
+|   |-- src/lib/screeps/           # Screeps API adapters and data logic
+|   `-- src/stores/                # Zustand stores
 |-- src-tauri/                      # Tauri + Rust
 |   |-- src/lib.rs                  # screeps_request / screeps_console_execute
 |   `-- tauri.conf.json             # Tauri config
@@ -68,7 +69,7 @@ npm install
 npm run dev
 ```
 
-This starts the Next.js dev server from `src-next/`.
+This starts the Vite dev server from `src-web/`.
 
 ### 3) Desktop dev mode (Tauri)
 
@@ -116,7 +117,7 @@ npm run package:android:all
 npm run build
 ```
 
-`src-next/next.config.ts` uses `output: "export"`, so web artifacts are generated in `src-next/out` and consumed by Tauri.
+`npm run build` builds via Vite (`src-web/vite.config.ts`); artifacts are generated in `src-web/dist` and consumed by Tauri. Routing uses HashRouter, so no server-side SPA fallback is required.
 
 ### Desktop bundle
 

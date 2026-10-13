@@ -26,3 +26,10 @@ dist
 out
 .*/
 !.github/
+
+# Rust / Tauri build artifacts
+target
+
+# Android gradle build caches
+.gradle/
+src-tauri/gen/android/**/build/

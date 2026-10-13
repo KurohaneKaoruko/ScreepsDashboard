@@ -247,8 +247,8 @@ function readBodyFromFile(filePath) {
 function getReleaseCommitFiles() {
   const files = ["package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"];
 
-  if (existsSync(resolve(projectRoot, "src-next", "public", "version.json"))) {
-    files.push("src-next/public/version.json");
+  if (existsSync(resolve(projectRoot, "src-web", "public", "version.json"))) {
+    files.push("src-web/public/version.json");
   }
   if (existsSync(resolve(projectRoot, "src-tauri", "Cargo.lock"))) {
     files.push("src-tauri/Cargo.lock");

@@ -25,12 +25,21 @@ pub struct ScreepsConsoleExecuteResponse {
 }
 
 fn normalize_console_shard(shard_input: Option<&str>) -> Option<String> {
+    // Accepts official names (shard0..) and private server names ("main",
+    // "season", custom identifiers).
     let shard = shard_input?.trim().to_lowercase();
-    if !shard.starts_with("shard") {
+    if shard.is_empty() || shard.len() > 64 {
         return None;
     }
-    let number_part = &shard[5..];
-    if number_part.is_empty() || !number_part.chars().all(|ch| ch.is_ascii_digit()) {
+    let mut chars = shard.chars();
+    let first = chars.next()?;
+    if !first.is_ascii_alphanumeric() {
+        return None;
+    }
+    if !shard
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
         return None;
     }
     Some(shard)
