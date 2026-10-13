@@ -200,7 +200,9 @@ jobs:
             tail -n 30 sdkmanager.log | while IFS= read -r line; do echo "::error::sdkmanager: ${line:0:400}"; done
             exit 1
           }
-          yes | sdkmanager --licenses
+          # `yes` gets SIGPIPE once licenses are accepted; pipefail would turn
+          # that into a job failure, so accept any outcome here.
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
           echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Install dependencies
@@ -407,7 +409,9 @@ jobs:
             exit 0
           fi
           set -o pipefail
-          pnpm run tauri -- ios init 2>&1 | tee ios-init.log || {
+          # NOTE: no `--` here - pnpm forwards it to the script, and the
+          # tauri CLI would receive `tauri -- ios init`.
+          pnpm run tauri ios init 2>&1 | tee ios-init.log || {
             tail -n 40 ios-init.log | while IFS= read -r line; do echo "::error::ios-init: ${line:0:400}"; done
             exit 1
           }
