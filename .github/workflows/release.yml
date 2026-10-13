@@ -24,12 +24,12 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+      # No dependency cache here: this job only runs a version-check script
+      # and the cache save/restore post step has failed sporadically before.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Verify tag and project version match
         run: node scripts/release/verify-tag-version.mjs ${{ github.ref_name }}
