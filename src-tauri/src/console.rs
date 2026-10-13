@@ -36,10 +36,7 @@ fn normalize_console_shard(shard_input: Option<&str>) -> Option<String> {
     if !first.is_ascii_alphanumeric() {
         return None;
     }
-    if !shard
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-    {
+    if !shard.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-') {
         return None;
     }
     Some(shard)
