@@ -475,7 +475,7 @@ function extractTerrainString(value: unknown): string | undefined {
   ]);
 }
 
-function extractTerrain(payload: unknown): string | undefined {
+export function extractTerrain(payload: unknown): string | undefined {
   const root = asRecord(payload) ?? {};
   return (
     extractTerrainString(root.terrain) ??

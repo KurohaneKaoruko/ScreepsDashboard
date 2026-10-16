@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeBaseUrl, screepsBatchRequest } from "./request";
-import type { ScreepsSession } from "./types";
+/**
+ * Minimal shape needed to look up a server's shard list. A full session
+ * satisfies it, but so does the lighter context used by guest/anonymous
+ * surfaces such as the world map.
+ */
+export interface ScreepsShardLookup {
+  baseUrl: string;
+  token?: string | null;
+  username?: string | null;
+}
 
 /**
  * Shard helpers that work for both the official server (shard0..shard3,
@@ -230,7 +239,7 @@ function writeCachedShards(baseUrl: string, shards: string[]): void {
  * `/api/game/shards/info`; some private/community drivers also answer
  * `/api/game/shards`. Returns [] when neither endpoint is available.
  */
-export async function fetchServerShards(session: ScreepsSession): Promise<string[]> {
+export async function fetchServerShards(session: ScreepsShardLookup): Promise<string[]> {
   const normalizedBaseUrl = normalizeBaseUrl(session.baseUrl);
   const cached = readCachedShards(normalizedBaseUrl);
   if (cached) {
@@ -242,6 +251,9 @@ export async function fetchServerShards(session: ScreepsSession): Promise<string
     return inflight;
   }
 
+  const token = session.token?.trim() ? session.token : undefined;
+  const username = session.username?.trim() ? session.username : undefined;
+
   const request = (async () => {
     const responses = await screepsBatchRequest(
       [
@@ -249,15 +261,15 @@ export async function fetchServerShards(session: ScreepsSession): Promise<string
           baseUrl: session.baseUrl,
           endpoint: "/api/game/shards/info",
           method: "GET",
-          token: session.token,
-          username: session.username,
+          token,
+          username,
         },
         {
           baseUrl: session.baseUrl,
           endpoint: "/api/game/shards",
           method: "GET",
-          token: session.token,
-          username: session.username,
+          token,
+          username,
         },
       ],
       { maxConcurrency: 2 }
@@ -294,9 +306,11 @@ export interface ServerShardsResult {
   refresh: () => void;
 }
 
-/** Shared hook that resolves the shard list for the active session. */
-export function useServerShards(session: ScreepsSession | null): ServerShardsResult {
-  const sessionKey = session ? `${normalizeBaseUrl(session.baseUrl)}|${session.token}` : null;
+/** Shared hook that resolves the shard list for the active server. */
+export function useServerShards(session: ScreepsShardLookup | null): ServerShardsResult {
+  // The shard list is a property of the server, not the account, so the cache
+  // key deliberately excludes the token.
+  const sessionKey = session ? normalizeBaseUrl(session.baseUrl) : null;
   const [shards, setShards] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

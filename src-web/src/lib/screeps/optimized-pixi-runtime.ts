@@ -248,6 +248,8 @@ class OptimizedPixiRuntimeImpl implements OptimizedPixiRuntime {
 
   private renderFrameId: number | null = null;
 
+  private renderPending = false;
+
   constructor(options: OptimizedPixiRuntimeOptions) {
     this.host = options.host;
     this.size.width = Math.max(1, Math.floor(options.width));
@@ -430,11 +432,12 @@ class OptimizedPixiRuntimeImpl implements OptimizedPixiRuntime {
     this.pixi = null;
     this.currentObjects = [];
     this.currentTerrain = null;
-    this.host.textContent = "";
+    this.renderPending = false;
     if (this.renderFrameId !== null && typeof window !== "undefined") {
       window.cancelAnimationFrame(this.renderFrameId);
       this.renderFrameId = null;
     }
+    this.host.textContent = "";
 
     if (!app) {
       return;
@@ -840,16 +843,38 @@ class OptimizedPixiRuntimeImpl implements OptimizedPixiRuntime {
     return promise;
   }
 
+  /**
+   * requestAnimationFrame is throttled (and in several engines fully paused)
+   * for hidden/backgrounded documents. Scheduling a frame there would never
+   * run the callback, leaving `renderFrameId` latched and silently dropping
+   * every future render request — the room map then stays blank even after the
+   * document becomes visible again.
+   */
+  private canAnimateWithFrames(): boolean {
+    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+      return false;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return false;
+    }
+    return true;
+  }
+
   private scheduleRender(): void {
-    if (typeof window === "undefined") {
+    if (this.renderPending) {
+      return;
+    }
+    this.renderPending = true;
+
+    if (!this.canAnimateWithFrames()) {
+      this.renderPending = false;
       this.render();
       return;
     }
-    if (this.renderFrameId !== null) {
-      return;
-    }
+
     this.renderFrameId = window.requestAnimationFrame(() => {
       this.renderFrameId = null;
+      this.renderPending = false;
       this.render();
     });
   }

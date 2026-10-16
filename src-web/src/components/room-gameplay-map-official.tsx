@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { SCREEPS_RENDERER_RESOURCE_MAP } from "../lib/screeps/renderer-resource-map";
+import { useAuthStore } from "../stores/auth-store";
 import type {
   OfficialRoomObjectRecord,
   OfficialRoomUserRecord,
@@ -27,7 +28,7 @@ interface RoomGameplayMapProps {
   currentUserId?: string;
 }
 
-interface RendererObjectState extends Record<string, unknown> {
+export interface RendererObjectState extends Record<string, unknown> {
   _id: string;
   room: string;
   type: string;
@@ -41,15 +42,15 @@ interface RendererObjectState extends Record<string, unknown> {
   ticksToLive?: number;
 }
 
-interface RendererUserState extends Record<string, unknown> {
+export interface RendererUserState extends Record<string, unknown> {
   username: string;
 }
 
-interface RendererMetadata {
+export interface RendererMetadata {
   objects?: Record<string, unknown>;
 }
 
-interface RendererInstance {
+export interface RendererInstance {
   init(container: HTMLElement): Promise<void>;
   release(): void;
   resize(size?: { width: number; height: number }): void;
@@ -68,7 +69,7 @@ interface RendererInstance {
   pan(x: number, y: number): void;
 }
 
-interface RendererInternals {
+export interface RendererInternals {
   app?: {
     stage?: { position?: { x: number; y: number } };
     renderer?: { resolution?: number; resize?: (...args: unknown[]) => void };
@@ -76,7 +77,7 @@ interface RendererInternals {
   world?: { options?: { VIEW_BOX?: number; gameData?: Record<string, unknown> } };
 }
 
-interface RendererModule {
+export interface RendererModule {
   GameRenderer?: new (options: Record<string, unknown>) => RendererInstance;
   PIXI?: unknown;
   default?: new (options: Record<string, unknown>) => RendererInstance;
@@ -126,20 +127,29 @@ interface RendererConsoleMonitorStore {
   listeners: Set<(args: unknown[]) => void>;
 }
 
-const GRID_SIZE = 50;
-const ROOM_VIEW_BOX = GRID_SIZE * 100;
+export const GRID_SIZE = 50;
+export const ROOM_VIEW_BOX = GRID_SIZE * 100;
 const ROOM_CELL_SIZE = ROOM_VIEW_BOX / GRID_SIZE;
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 3.8;
 const ZOOM_STEP = 1.15;
 const DEFAULT_ZOOM = 1;
-const MIN_RENDERER_INIT_SIZE = 16;
-const RENDERER_INIT_TIMEOUT_MS = 6_000;
+export const MIN_RENDERER_INIT_SIZE = 16;
+export const RENDERER_INIT_TIMEOUT_MS = 6_000;
+
+/**
+ * Neutral badge used when no server URL is known. The official renderer's
+ * `setBadgeUrls` preprocessor calls `BADGE_URL.replace(...)` unconditionally, so
+ * the option must always hold a string.
+ */
+const FALLBACK_BADGE_URL =
+  "data:image/svg+xml;charset=utf8," +
+  encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"></svg>');
 const WATCHDOG_LONG_FRAME_MS = 2_500;
 const WATCHDOG_MAX_CONSECUTIVE_LONG_FRAMES = 3;
 const MAX_RECOVERABLE_FRAME_ERRORS = 2;
 const CONSOLE_MONITOR_KEY = "__screepsOfficialConsoleMonitor";
-interface OfficialRendererGameData {
+export interface OfficialRendererGameData {
   showEnemyNames: Record<string, boolean>;
   showMyNames: Record<string, boolean>;
   showCreepSpeech: boolean;
@@ -173,7 +183,7 @@ function normalizeIdentity(value: string | undefined): string | undefined {
   return value?.trim().toLowerCase();
 }
 
-function createOfficialGameData(player?: string): OfficialRendererGameData {
+export function createOfficialGameData(player?: string): OfficialRendererGameData {
   const gameData: OfficialRendererGameData = {
     showEnemyNames: {
       ...DEFAULT_OFFICIAL_GAME_DATA.showEnemyNames,
@@ -311,7 +321,7 @@ function resolveObjectRoomNameFromOfficial(
   return toNonEmptyString(item.room) ?? fallbackRoomName;
 }
 
-function resolveCurrentPlayerFromOfficialUsers(
+export function resolveCurrentPlayerFromOfficialUsers(
   officialUsers: Record<string, OfficialRoomUserRecord> | undefined,
   currentUsername: string | undefined,
   currentUserId: string | undefined
@@ -336,7 +346,7 @@ function resolveCurrentPlayerFromOfficialUsers(
   return toNonEmptyString(currentUsername);
 }
 
-function buildRendererUsersFromOfficial(
+export function buildRendererUsersFromOfficial(
   officialUsers: Record<string, OfficialRoomUserRecord> | undefined,
   roomObjects: RoomObjectSummary[] | undefined,
   currentUsername?: string,
@@ -553,7 +563,7 @@ function toIntegerGridCoordinate(value: unknown): number | null {
   return null;
 }
 
-function decodeTerrainToObjects(encoded: string | undefined, roomName: string): RendererObjectState[] {
+export function decodeTerrainToObjects(encoded: string | undefined, roomName: string): RendererObjectState[] {
   if (!encoded) {
     return [];
   }
@@ -596,7 +606,7 @@ function decodeTerrainToObjects(encoded: string | undefined, roomName: string): 
   return terrainObjects;
 }
 
-function buildRendererObjectsFromOfficial(
+export function buildRendererObjectsFromOfficial(
   roomName: string,
   officialObjects: OfficialRoomObjectRecord[] | undefined,
   roomObjects: RoomObjectSummary[] | undefined
@@ -783,7 +793,7 @@ function buildRendererUsers(
   return users;
 }
 
-function getModuleGameRenderer(module: RendererModule): (new (options: Record<string, unknown>) => RendererInstance) | null {
+export function getModuleGameRenderer(module: RendererModule): (new (options: Record<string, unknown>) => RendererInstance) | null {
   if (module.GameRenderer) {
     return module.GameRenderer;
   }
@@ -811,7 +821,7 @@ function ensureTextureUvs(texture: PixiTextureLike | null | undefined): boolean 
   return Boolean(texture._uvs);
 }
 
-function installPixiUvsGuards(pixiUnknown: unknown) {
+export function installPixiUvsGuards(pixiUnknown: unknown) {
   const pixi = pixiUnknown as
     | {
         Sprite?: { prototype?: Record<string, unknown> };
@@ -868,7 +878,7 @@ function installPixiUvsGuards(pixiUnknown: unknown) {
   }
 }
 
-function hasPixiAssetAlias(pixiUnknown: unknown, alias: string): boolean {
+export function hasPixiAssetAlias(pixiUnknown: unknown, alias: string): boolean {
   const pixi = pixiUnknown as PixiAssetsLike | undefined;
   const getter = pixi?.Assets?.get;
   if (typeof getter !== "function") {
@@ -882,7 +892,7 @@ function hasPixiAssetAlias(pixiUnknown: unknown, alias: string): boolean {
   }
 }
 
-function filterSupportedObjects(
+export function filterSupportedObjects(
   objects: RendererObjectState[],
   supportedTypes: ReadonlySet<string>
 ): RendererObjectState[] {
@@ -892,7 +902,7 @@ function filterSupportedObjects(
   return objects.filter((object) => supportedTypes.has(object.type));
 }
 
-function filterUsersByObjects(
+export function filterUsersByObjects(
   users: Record<string, RendererUserState>,
   objects: RendererObjectState[]
 ): Record<string, RendererUserState> {
@@ -1074,6 +1084,26 @@ export function RoomGameplayMap({
   const [retryNonce, setRetryNonce] = useState(0);
   const [renderProfile, setRenderProfile] = useState<OfficialRenderProfile>("full");
   const setMapRendererMode = useSettingsStore((state) => state.setMapRendererMode);
+  const servers = useSettingsStore((state) => state.servers);
+  const activeServerId = useSettingsStore((state) => state.activeServerId);
+  const sessionBaseUrl = useAuthStore((state) => state.session?.baseUrl);
+
+  /**
+   * The official renderer's `setBadgeUrls` state preprocessor replaces a `%1`
+   * placeholder in `BADGE_URL` on every `applyState` call, so the option has to
+   * be present or every room with owned objects fails to render. A neutral
+   * transparent SVG is used while no server is known.
+   */
+  const badgeUrl = useMemo(() => {
+    const fallbackServer = servers.find((server) => server.id === activeServerId) ?? servers[0];
+    const raw = sessionBaseUrl?.trim() || fallbackServer?.baseUrl?.trim();
+    if (!raw) {
+      return undefined;
+    }
+    return `${raw.replace(/\/+$/, "")}/api/user/badge-svg?username=%1`;
+  }, [activeServerId, servers, sessionBaseUrl]);
+  const badgeUrlRef = useRef(badgeUrl);
+  badgeUrlRef.current = badgeUrl;
 
   const isReady = rendererState === "running";
   const isTerminalFailure = rendererState === "degraded" || rendererState === "destroyed";
@@ -1552,6 +1582,7 @@ export function RoomGameplayMap({
               },
               gameData: rendererGameData,
               lighting: renderProfileRef.current === "safe" ? "disabled" : "normal",
+              BADGE_URL: badgeUrlRef.current ?? FALLBACK_BADGE_URL,
             },
           });
 
@@ -1752,6 +1783,43 @@ export function RoomGameplayMap({
       canvas.removeEventListener("webglcontextlost", onContextLost, false);
     };
   }, [hardKillRenderer, isReady]);
+
+  useEffect(() => {
+    if (!isReady || typeof document === "undefined") {
+      return;
+    }
+
+    // Pixi's ticker is driven by requestAnimationFrame, which browsers fully
+    // pause for hidden documents (background tab, minimized Tauri window,
+    // backgrounded Android WebView). When the page becomes visible again we
+    // nudge the renderer so a frame is produced instead of staying blank.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      if (rendererStateRef.current !== "running" || !rendererRef.current) {
+        return;
+      }
+
+      runRendererAction(
+        "resource",
+        (renderer) => {
+          renderer.resize({
+            width: viewportSizeRef.current.width,
+            height: viewportSizeRef.current.height,
+          });
+        },
+        {
+          fallbackMessage: "Failed to refresh official renderer after visibility change.",
+        }
+      );
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isReady, runRendererAction]);
 
   useEffect(() => {
     const onWindowError = (event: ErrorEvent) => {

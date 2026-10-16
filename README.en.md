@@ -15,7 +15,7 @@ Screeps Dashboard is a cross-platform client built with `Tauri 2 + Next.js 15` f
 - Rankings (`/rankings`): dimensions, filtering, pagination.
 - Market (`/market`): resource order browsing and order-assist flow.
 - Messages (`/messages`) and Console (`/console`): unavailable in guest mode; token session required.
-- Map (`/map`): currently a placeholder page (under development).
+- World map (`/map`): browse the world map with owner-coloured rooms and RCL levels, highway/novice hints, a hover tooltip, a click-to-pin room inspector, players/own-room lists, minimap navigation and layer toggles. Available to guests and anonymous visitors too.
 - Sidebar public search: available in any active session (including guest) to jump to public user/resources pages.
 - Request pipeline: Tauri Rust command `screeps_request` first, browser `fetch` fallback.
 - Console execution pipeline: Tauri Rust command `screeps_console_execute` first, browser request fallback on failure.

@@ -283,6 +283,33 @@ export interface PublicRoomStat {
   respawnArea?: boolean;
 }
 
+export interface WorldRoomCoord {
+  x: number;
+  y: number;
+}
+
+export interface WorldRoomStat {
+  room: string;
+  x: number;
+  y: number;
+  /** Resolved username when the server exposes the `users` directory. */
+  owner?: string;
+  ownerId?: string;
+  level?: number;
+  novice?: boolean;
+  respawnArea?: boolean;
+  safeMode?: boolean;
+}
+
+export interface WorldRoomPage {
+  fetchedAt: string;
+  rooms: WorldRoomStat[];
+  users: Record<string, string>;
+  gameTime?: number;
+  requested: number;
+  resolved: number;
+}
+
 export interface PublicMapSummary {
   terrainRoom: string;
   terrainAvailable: boolean;

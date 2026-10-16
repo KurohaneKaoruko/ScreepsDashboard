@@ -4,7 +4,6 @@ import { AuthGuard } from "./components/auth-guard";
 import { ConsolePanel } from "./components/console-panel";
 import { MarketPanel } from "./components/market-panel";
 import { MessagesPanel } from "./components/messages-panel";
-import { PlaceholderPage } from "./components/placeholder-page";
 import { RankingsPanel } from "./components/rankings-panel";
 import { ResourcesPanel } from "./components/resources-panel";
 import { RoomDetailRoute } from "./components/room-detail-route";
@@ -12,6 +11,7 @@ import { SettingsPanel } from "./components/settings-panel";
 import { HomePage } from "./pages/home-page";
 import { LoginPage } from "./pages/login-page";
 import { UserPage } from "./pages/user-page";
+import { WorldMapPanel } from "./components/world-map-panel";
 
 export function AppRoutes() {
   return (
@@ -36,11 +36,9 @@ export function AppRoutes() {
       <Route
         path="/map"
         element={
-          <AuthGuard>
-            <AppShell>
-              <PlaceholderPage titleKey="map.title" descriptionKey="map.subtitle" />
-            </AppShell>
-          </AuthGuard>
+          <AppShell>
+            <WorldMapPanel />
+          </AppShell>
         }
       />
       <Route

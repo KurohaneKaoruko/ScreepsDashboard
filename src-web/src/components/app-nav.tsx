@@ -226,6 +226,12 @@ export function AppNav({ onNavigate }: AppNavProps) {
           icon: "rooms",
         },
         {
+          href: "/map",
+          label: mapLabel,
+          meta: "/map",
+          icon: "map",
+        },
+        {
           href: "/rankings",
           label: t("nav.rankingsLabel"),
           meta: "/rankings",
