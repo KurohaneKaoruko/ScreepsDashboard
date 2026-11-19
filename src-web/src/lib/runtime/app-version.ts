@@ -24,7 +24,7 @@ async function readVersionFromTauri(): Promise<string | null> {
 
 async function readVersionFromStaticFile(): Promise<string | null> {
   try {
-    const response = await fetch("/version.json", { cache: "no-store" });
+    const response = await fetch(new URL("version.json", document.baseURI), { cache: "no-store" });
     if (!response.ok) {
       return null;
     }

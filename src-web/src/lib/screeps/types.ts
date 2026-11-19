@@ -225,6 +225,16 @@ export interface RoomObjectSummary {
   actionLog?: RoomObjectActionLog;
   userId?: string;
   effects?: RoomObjectEffectSummary[];
+  role?: string;
+  structureType?: string;
+  resourceType?: string;
+  amount?: number;
+  mineralAmount?: number;
+  ticksToRegeneration?: number;
+  ticksToDowngrade?: number;
+  downgradeTime?: number;
+  cooldown?: number;
+  isActive?: boolean;
 }
 
 export interface OfficialRoomObjectRecord extends Record<string, unknown> {

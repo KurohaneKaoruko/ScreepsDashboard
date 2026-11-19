@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { SCREEPS_RENDERER_RESOURCE_MAP } from "../lib/screeps/renderer-resource-map";
+import { resolveWebTransportUrl } from "../lib/runtime/web-transport";
 import { useAuthStore } from "../stores/auth-store";
 import type {
   OfficialRoomObjectRecord,
@@ -145,8 +146,12 @@ export const RENDERER_INIT_TIMEOUT_MS = 6_000;
 const FALLBACK_BADGE_URL =
   "data:image/svg+xml;charset=utf8," +
   encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"></svg>');
-const WATCHDOG_LONG_FRAME_MS = 2_500;
-const WATCHDOG_MAX_CONSECUTIVE_LONG_FRAMES = 3;
+// WebGL shader compilation, texture uploads, and a background tab can all
+// pause the main thread for several seconds during the first frames. Give the
+// official renderer time to warm up before treating long frames as a lockup.
+const WATCHDOG_WARMUP_MS = 15_000;
+const WATCHDOG_LONG_FRAME_MS = 5_000;
+const WATCHDOG_MAX_CONSECUTIVE_LONG_FRAMES = 6;
 const MAX_RECOVERABLE_FRAME_ERRORS = 2;
 const CONSOLE_MONITOR_KEY = "__screepsOfficialConsoleMonitor";
 export interface OfficialRendererGameData {
@@ -1073,6 +1078,7 @@ export function RoomGameplayMap({
   const runtimeRef = useRef({
     watchdogFrameId: 0,
     lastWatchdogAt: 0,
+    watchdogWarmupUntil: 0,
     consecutiveLongFrames: 0,
     consecutiveFrameErrors: 0,
   });
@@ -1100,7 +1106,7 @@ export function RoomGameplayMap({
     if (!raw) {
       return undefined;
     }
-    return `${raw.replace(/\/+$/, "")}/api/user/badge-svg?username=%1`;
+    return resolveWebTransportUrl(`${raw.replace(/\/+$/, "")}/api/user/badge-svg?username=BADGE_USERNAME`).replace("BADGE_USERNAME", "%1");
   }, [activeServerId, servers, sessionBaseUrl]);
   const badgeUrlRef = useRef(badgeUrl);
   badgeUrlRef.current = badgeUrl;
@@ -1400,6 +1406,7 @@ export function RoomGameplayMap({
     stopWatchdog();
     const runtime = runtimeRef.current;
     runtime.lastWatchdogAt = performance.now();
+    runtime.watchdogWarmupUntil = runtime.lastWatchdogAt + WATCHDOG_WARMUP_MS;
     runtime.consecutiveLongFrames = 0;
 
     const tick = (now: number) => {
@@ -1412,9 +1419,18 @@ export function RoomGameplayMap({
         return;
       }
 
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        runtime.lastWatchdogAt = now;
+        runtime.consecutiveLongFrames = 0;
+        runtime.watchdogFrameId = requestAnimationFrame(tick);
+        return;
+      }
+
       const elapsed = now - runtime.lastWatchdogAt;
       runtime.lastWatchdogAt = now;
-      if (elapsed > WATCHDOG_LONG_FRAME_MS) {
+      if (now < runtime.watchdogWarmupUntil) {
+        runtime.consecutiveLongFrames = 0;
+      } else if (elapsed > WATCHDOG_LONG_FRAME_MS) {
         runtime.consecutiveLongFrames += 1;
         if (runtime.consecutiveLongFrames >= WATCHDOG_MAX_CONSECUTIVE_LONG_FRAMES) {
           if (renderProfileRef.current === "safe") {
@@ -1586,11 +1602,18 @@ export function RoomGameplayMap({
             },
           });
 
-          await withTimeout(
-            renderer.init(host),
-            RENDERER_INIT_TIMEOUT_MS,
-            "Official renderer initialization timed out."
-          );
+          try {
+            await withTimeout(
+              renderer.init(host),
+              RENDERER_INIT_TIMEOUT_MS,
+              "Official renderer initialization timed out."
+            );
+          } catch (error) {
+            // A renderer is not assigned to rendererRef until init succeeds.
+            // Release this local instance as well when asset loading fails.
+            releaseRendererSafely(renderer);
+            throw error;
+          }
           if (cancelled || setupId !== setupAttemptRef.current) {
             releaseRendererSafely(renderer);
             host.textContent = "";
@@ -1794,6 +1817,10 @@ export function RoomGameplayMap({
     // backgrounded Android WebView). When the page becomes visible again we
     // nudge the renderer so a frame is produced instead of staying blank.
     const handleVisibilityChange = () => {
+      const runtime = runtimeRef.current;
+      runtime.lastWatchdogAt = performance.now();
+      runtime.consecutiveLongFrames = 0;
+      runtime.watchdogWarmupUntil = runtime.lastWatchdogAt + WATCHDOG_WARMUP_MS;
       if (document.visibilityState !== "visible") {
         return;
       }

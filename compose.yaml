@@ -1,0 +1,8 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SCREEPS_ALLOWED_SERVERS: ${SCREEPS_ALLOWED_SERVERS:-https://screeps.com}
+    restart: unless-stopped

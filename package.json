@@ -8,6 +8,12 @@
     "dev": "cd src-web && vite",
     "build": "cd src-web && vite build",
     "start": "cd src-web && vite preview",
+    "dev:web": "cd src-web && vite --host 0.0.0.0",
+    "build:web": "cd src-web && vite build",
+    "start:web": "node scripts/web/serve.mjs",
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test --config playwright.config.ts",
+    "check:web": "pnpm lint && pnpm typecheck:web && pnpm test && pnpm build:web",
     "assets:resource-icons": "node scripts/fetch-resource-thumbnails.mjs",
     "lint": "cd src-web && eslint .",
     "typecheck:web": "tsc --noEmit --incremental false -p src-web/tsconfig.json",
@@ -50,6 +56,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.1.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "25.2.3",
@@ -62,7 +69,8 @@
     "tailwindcss": "^4.1.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.0.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vitest": "^4.1.12"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

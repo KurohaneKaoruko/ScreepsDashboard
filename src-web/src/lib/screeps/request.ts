@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { QueryParams, ScreepsRequest, ScreepsResponse } from "./types";
 import { hasTauriRuntime } from "../runtime/platform";
+import { resolveWebTransportUrl } from "../runtime/web-transport";
 
 const DEFAULT_SERVER_URL = "https://screeps.com";
 const FALLBACK_TIMEOUT_MS = 20_000;
@@ -174,6 +175,9 @@ async function browserFallbackRequest(request: ScreepsRequest): Promise<ScreepsR
   const headers = new Headers({
     Accept: "application/json",
   });
+  if (method !== "GET") {
+    headers.set("Content-Type", "application/json");
+  }
 
   const token = request.token?.trim();
   const username = request.username?.trim();
@@ -188,11 +192,12 @@ async function browserFallbackRequest(request: ScreepsRequest): Promise<ScreepsR
   const timeout = window.setTimeout(() => controller.abort(), FALLBACK_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(resolveWebTransportUrl(url), {
       method,
       headers,
       body: method === "GET" ? undefined : JSON.stringify(request.body ?? {}),
       signal: controller.signal,
+      credentials: "omit",
     });
 
     const rawText = await response.text();
@@ -209,7 +214,7 @@ async function browserFallbackRequest(request: ScreepsRequest): Promise<ScreepsR
       status: response.status,
       ok: response.ok,
       data,
-      url: response.url,
+      url,
     };
   } finally {
     clearTimeout(timeout);
@@ -343,4 +348,20 @@ export async function screepsRequest(request: ScreepsRequest): Promise<ScreepsRe
     return toErrorResponse(normalizeRequest(request), "Request failed: empty response");
   }
   return response;
+}
+
+/** Writes are dispatched once; an interrupted native request may already have reached the game. */
+export async function screepsMutation(request: ScreepsRequest): Promise<ScreepsResponse> {
+  const normalized = normalizeRequest(request);
+  if ((normalized.method ?? "GET") === "GET") {
+    throw new Error("A mutation must use a write method.");
+  }
+  try {
+    if (hasTauriRuntime()) {
+      return await invoke<ScreepsResponse>("screeps_request", { request: normalized });
+    }
+    return await browserFallbackRequest(normalized);
+  } catch (error) {
+    return toErrorResponse(normalized, error);
+  }
 }

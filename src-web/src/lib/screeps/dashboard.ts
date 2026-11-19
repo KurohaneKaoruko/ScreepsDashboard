@@ -1,6 +1,9 @@
 import { normalizeBaseUrl, screepsBatchRequest, screepsRequest } from "./request";
 import { getRoomSummariesFromCache, setRoomSummariesToCache } from "./room-summary-cache";
 import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
+import { normalizeShardName } from "./shards";
+import { parseRoomObjectEntities } from "./room-detail";
+import { extractObjectStore as normalizedObjectStore } from "./object-store";
 import type {
   DashboardSnapshot,
   QueryParams,
@@ -273,6 +276,8 @@ const ROOM_OBJECTS_NON_TRANSIENT_RETRY_DELAY_MS = 60_000;
 const ROOM_OBJECTS_REQUEST_WINDOW_MS = 60_000;
 const ROOM_OBJECTS_REQUEST_LIMIT = 48;
 const ROOM_OBJECTS_CACHE = new Map<string, RoomObjectSummary[]>();
+const ROOM_OBJECTS_CACHE_TIME = new Map<string, number>();
+const ROOM_OBJECTS_CACHE_TTL_MS = 30_000;
 const ROOM_OBJECTS_RETRY_AT = new Map<string, number>();
 const ROOM_OBJECTS_REQUEST_TIMESTAMPS: number[] = [];
 const ROOM_LEVEL_CACHE = new Map<string, number>();
@@ -460,23 +465,6 @@ function asNumber(value: unknown): number | undefined {
     }
   }
   return undefined;
-}
-
-function toNumericRecord(value: unknown): Record<string, number> | undefined {
-  const record = asRecord(value);
-  if (!record) {
-    return undefined;
-  }
-
-  const output: Record<string, number> = {};
-  for (const [key, rawValue] of Object.entries(record)) {
-    const parsed = asNumber(rawValue);
-    if (parsed !== undefined) {
-      output[key] = parsed;
-    }
-  }
-
-  return Object.keys(output).length > 0 ? output : undefined;
 }
 
 function asString(value: unknown): string | undefined {
@@ -717,51 +705,8 @@ function extractObjectRoomName(record: Record<string, unknown>): string | undefi
   );
 }
 
-function mergeStoreValue(
-  sink: Record<string, number>,
-  resourceType: string | undefined,
-  amount: number | undefined
-): void {
-  const key = resourceType?.trim();
-  if (!key || amount === undefined || !Number.isFinite(amount) || amount <= 0) {
-    return;
-  }
-  sink[key] = (sink[key] ?? 0) + amount;
-}
-
 function extractObjectStore(record: Record<string, unknown>): Record<string, number> | undefined {
-  const output: Record<string, number> = {};
-
-  const storeCandidates = [
-    toNumericRecord(record.store),
-    toNumericRecord(asRecord(record.store)?.store),
-    toNumericRecord(record.resources),
-    toNumericRecord(asRecord(record.resources)?.store),
-  ];
-
-  for (const candidate of storeCandidates) {
-    if (!candidate) {
-      continue;
-    }
-    for (const [resourceType, amount] of Object.entries(candidate)) {
-      mergeStoreValue(output, resourceType, amount);
-    }
-  }
-
-  const resourceType = firstString([record.resourceType, record.resource]);
-  const resourceAmount = firstNumber([record.amount, record.resourceAmount]);
-  mergeStoreValue(output, resourceType, resourceAmount);
-
-  const mineralType = firstString([record.mineralType]);
-  const mineralAmount = firstNumber([record.mineralAmount, record.mineral]);
-  mergeStoreValue(output, mineralType, mineralAmount);
-
-  mergeStoreValue(output, "energy", asNumber(record.energy));
-  mergeStoreValue(output, "power", asNumber(record.power));
-  mergeStoreValue(output, "ops", asNumber(record.ops));
-  mergeStoreValue(output, "ghodium", asNumber(record.ghodium));
-
-  return Object.keys(output).length > 0 ? output : undefined;
+  return normalizedObjectStore(record);
 }
 
 function resolveRoomObjectType(record: Record<string, unknown>): string | undefined {
@@ -796,6 +741,8 @@ function resolveRoomObjectType(record: Record<string, unknown>): string | undefi
 }
 
 function parseRoomObjectsForThumbnail(roomName: string, payload: unknown): RoomObjectSummary[] {
+  const parsed = parseRoomObjectEntities(roomName, undefined, [payload]).objects;
+  if (parsed.length > 0) return parsed;
   const normalizedRoomName = normalizeRoomName(roomName) ?? roomName.trim().toUpperCase();
   const objectRecords = extractRoomObjectRecords(payload);
   if (objectRecords.length === 0) {
@@ -1597,17 +1544,14 @@ function mergeRoomSummary(
   const status = asRecord(record.status) ?? {};
   const stats = asRecord(record.stats) ?? {};
   const statsController = asRecord(stats.controller) ?? {};
-  const previous = sink.get(roomName);
   const shardCandidate = firstString([
     record.shard,
     record.shardName,
     shardHint,
-    previous?.shard,
   ]);
-  const shard =
-    shardCandidate && SHARD_NAME_PATTERN.test(shardCandidate)
-      ? shardCandidate.toLowerCase()
-      : previous?.shard;
+  const shard = normalizeShardName(shardCandidate);
+  const key = toDashboardRoomKey(roomName, shard);
+  const previous = sink.get(key);
 
   const owner = firstString([
     record.owner,
@@ -1643,7 +1587,7 @@ function mergeRoomSummary(
     previous?.energyCapacity,
   ]);
 
-  sink.set(roomName, {
+  sink.set(key, {
     name: roomName,
     shard,
     owner,
@@ -1657,7 +1601,8 @@ function collectRoomSummary(
   value: unknown,
   sink: Map<string, RoomSummary>,
   depth: number,
-  shardHint?: string
+  shardHint?: string,
+  shardContainer = false
 ): void {
   if (depth > 6 || value === null || value === undefined) {
     return;
@@ -1681,10 +1626,7 @@ function collectRoomSummary(
   }
 
   const explicitShard = firstString([record.shard, record.shardName]);
-  const normalizedShard =
-    explicitShard && SHARD_NAME_PATTERN.test(explicitShard)
-      ? explicitShard.toLowerCase()
-      : shardHint;
+  const normalizedShard = normalizeShardName(explicitShard) ?? shardHint;
   const roomName = normalizeRoomName(
     firstString([record.room, record.roomName, record.name, record._id])
   );
@@ -1698,12 +1640,18 @@ function collectRoomSummary(
     if (normalizedKeyRoom && ROOM_NAME_PATTERN.test(normalizedKeyRoom)) {
       mergeRoomSummary(sink, normalizedKeyRoom, nested, normalizedShard);
     }
-    const nextShard = SHARD_NAME_PATTERN.test(key) ? key.toLowerCase() : normalizedShard;
-    collectRoomSummary(nested, sink, depth + 1, nextShard);
+    const isShardGroup = !normalizedKeyRoom &&
+      !["rooms", "data", "result", "shards", "user"].includes(key) &&
+      Array.isArray(nested) &&
+      nested.some((item) => typeof item === "string" && ROOM_NAME_PATTERN.test(item));
+    const nextShard = SHARD_NAME_PATTERN.test(key) || shardContainer || isShardGroup
+      ? normalizeShardName(key)
+      : normalizedShard;
+    collectRoomSummary(nested, sink, depth + 1, nextShard, key === "shards");
   }
 }
 
-function extractRooms(roomsPayload: unknown, profilePayload: unknown): RoomSummary[] {
+export function extractRooms(roomsPayload: unknown, profilePayload?: unknown): RoomSummary[] {
   const sink = new Map<string, RoomSummary>();
   collectRoomSummary(roomsPayload, sink, 0);
 
@@ -1712,6 +1660,30 @@ function extractRooms(roomsPayload: unknown, profilePayload: unknown): RoomSumma
   }
 
   return [...sink.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** Room discovery does not need profile, avatar, terrain, or per-room requests. */
+export async function fetchRoomDirectory(session: ScreepsSession): Promise<RoomSummary[]> {
+  const query: QueryParams = session.userId ? { id: session.userId } : { username: session.username };
+  const candidates = [
+    session.endpointMap.rooms,
+    { endpoint: "/api/user/rooms", method: "GET" as const, query },
+    { endpoint: "/api/user/rooms", method: "GET" as const },
+  ].filter((candidate) => candidate !== undefined);
+  let lastError = "Unable to fetch the room list.";
+  for (const candidate of candidates) {
+    const response = await screepsRequest({ ...candidate, baseUrl: session.baseUrl, token: session.token, username: session.username });
+    const payload = asRecord(response.data);
+    if (!response.ok || payload?.error || payload?.ok === 0) {
+      lastError = typeof payload?.error === "string" ? payload.error : `HTTP ${response.status}`;
+      if (response.status === 401 || response.status === 403 || response.status === 429) break;
+      continue;
+    }
+    const rooms = extractRooms(response.data);
+    setRoomSummariesToCache(session.baseUrl, session.username, rooms);
+    return rooms;
+  }
+  throw new Error(lastError);
 }
 
 function splitIntoChunks<T>(items: T[], chunkSize: number): T[][] {
@@ -1730,7 +1702,7 @@ function mergeRoomSummaries(
 ): RoomSummary[] {
   const sink = new Map<string, RoomSummary>();
   for (const room of baseRooms) {
-    sink.set(room.name, room);
+    sink.set(toDashboardRoomKey(room.name, room.shard), room);
   }
   collectRoomSummary(payload, sink, 0, shardHint);
   return [...sink.values()].sort((left, right) => left.name.localeCompare(right.name));
@@ -2242,11 +2214,12 @@ async function fetchRoomObjectsForThumbnail(
   baseUrl: string,
   token: string,
   username: string,
-  room: RoomSummary
+  room: RoomSummary,
+  forceRefresh = false
 ): Promise<RoomObjectSummary[] | undefined> {
   const roomObjectsKey = buildRoomObjectsKey(room, baseUrl);
   const cached = ROOM_OBJECTS_CACHE.get(roomObjectsKey);
-  if (cached && cached.length > 0) {
+  if (!forceRefresh && cached && Date.now() - (ROOM_OBJECTS_CACHE_TIME.get(roomObjectsKey) ?? 0) < ROOM_OBJECTS_CACHE_TTL_MS) {
     return cached;
   }
 
@@ -2294,6 +2267,7 @@ async function fetchRoomObjectsForThumbnail(
       const roomObjects = parseRoomObjectsForThumbnail(room.name, response.data);
       if (roomObjects.length > 0) {
         ROOM_OBJECTS_CACHE.set(roomObjectsKey, roomObjects);
+        ROOM_OBJECTS_CACHE_TIME.set(roomObjectsKey, Date.now());
         clearRoomObjectsRetry(baseUrl, room);
         return roomObjects;
       }
@@ -2346,9 +2320,14 @@ async function mapWithConcurrency<T, R>(
   return output;
 }
 
+export interface DashboardRoomObjectsOptions {
+  forceRefresh?: boolean;
+}
+
 export async function fetchDashboardRoomObjects(
   session: ScreepsSession,
-  rooms: readonly RoomSummary[]
+  rooms: readonly RoomSummary[],
+  options?: DashboardRoomObjectsOptions
 ): Promise<Record<string, RoomObjectSummary[]>> {
   if (!rooms.length) {
     return {};
@@ -2363,12 +2342,12 @@ export async function fetchDashboardRoomObjects(
     const cachedObjects = ROOM_OBJECTS_CACHE.get(roomObjectsKey);
     const roomLookupKey = toDashboardRoomKey(room.name, room.shard);
 
-    if (cachedObjects && cachedObjects.length > 0) {
+    if (!options?.forceRefresh && cachedObjects && now - (ROOM_OBJECTS_CACHE_TIME.get(roomObjectsKey) ?? 0) < ROOM_OBJECTS_CACHE_TTL_MS) {
       result[roomLookupKey] = cachedObjects;
       continue;
     }
 
-    if (!canRetryRoomObjects(session.baseUrl, room, now)) {
+    if (!options?.forceRefresh && !canRetryRoomObjects(session.baseUrl, room, now)) {
       continue;
     }
 
@@ -2385,7 +2364,8 @@ export async function fetchDashboardRoomObjects(
         session.baseUrl,
         session.token,
         session.username,
-        room
+        room,
+        options?.forceRefresh
       );
       return { room, roomObjects };
     } catch {

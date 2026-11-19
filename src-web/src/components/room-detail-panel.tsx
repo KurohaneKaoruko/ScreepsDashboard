@@ -12,9 +12,8 @@ import { useNavigate } from "react-router-dom";
 import useSWR from "swr";
 import { useI18n } from "../lib/i18n/use-i18n";
 import {
-  extractRoomDetailRealtimePatch,
+  mergeRoomDetailEvent,
   fetchRoomDetailSnapshot,
-  type RoomDetailRealtimePatch,
 } from "../lib/screeps/room-detail";
 import { ScreepsRealtimeClient } from "../lib/screeps/realtime-client";
 import {
@@ -23,6 +22,8 @@ import {
   useServerShards,
 } from "../lib/screeps/shards";
 import type { RoomDetailSnapshot } from "../lib/screeps/types";
+import { RoomIntelligence, type RoomIntelTab } from "./room-intelligence";
+import { RoomOperations } from "./room-operations";
 import { useAuthStore } from "../stores/auth-store";
 import { RoomGameplayMap } from "./room-gameplay-map";
 
@@ -111,96 +112,6 @@ function matchesTargetRoomChannel(
   return parsed.shard === shard;
 }
 
-function mergeRoomDetailSnapshot(
-  current: RoomDetailSnapshot,
-  patch: Partial<RoomDetailSnapshot>
-): RoomDetailSnapshot {
-  const has = (key: keyof RoomDetailSnapshot): boolean =>
-    Object.prototype.hasOwnProperty.call(patch, key);
-
-  // 检查是否是增量更新
-  const realtimePatch = patch as RoomDetailRealtimePatch | null;
-  const isMergeMode = realtimePatch?.objectUpdateMode === "merge";
-  const isOfficialMergeMode = realtimePatch?.officialObjectUpdateMode === "merge";
-  const removedObjectIds = realtimePatch?.removedObjectIds;
-  const removedOfficialObjectIds = realtimePatch?.removedOfficialObjectIds;
-
-  // 处理 objects 的增量合并
-  let mergedObjects = current.objects;
-  if (has("objects") && patch.objects) {
-    if (isMergeMode && removedObjectIds && removedObjectIds.length > 0) {
-      // 增量模式：删除被移除的对象，合并新/更新的对象
-      const removedSet = new Set(removedObjectIds);
-      // 过滤掉已删除的对象
-      const filteredCurrent = current.objects.filter((obj) => !removedSet.has(obj.id));
-      // 创建 ID 到对象的映射以便快速更新
-      const newObjectsMap = new Map(patch.objects.map((obj) => [obj.id, obj]));
-      // 合并：保留当前未删除的对象，用新对象覆盖/添加
-      const merged = [...filteredCurrent];
-      for (const newObj of newObjectsMap.values()) {
-        const existingIndex = merged.findIndex((obj) => obj.id === newObj.id);
-        if (existingIndex >= 0) {
-          merged[existingIndex] = newObj;
-        } else {
-          merged.push(newObj);
-        }
-      }
-      mergedObjects = merged;
-    } else {
-      // 全量替换模式
-      mergedObjects = patch.objects;
-    }
-  } else if (isMergeMode && removedObjectIds && removedObjectIds.length > 0) {
-    // 只删除，不添加新对象
-    const removedSet = new Set(removedObjectIds);
-    mergedObjects = current.objects.filter((obj) => !removedSet.has(obj.id));
-  }
-
-  // 处理 officialObjects 的增量合并
-  let mergedOfficialObjects = current.officialObjects;
-  if (has("officialObjects") && patch.officialObjects) {
-    if (isOfficialMergeMode && removedOfficialObjectIds && removedOfficialObjectIds.length > 0) {
-      const removedSet = new Set(removedOfficialObjectIds);
-      const filteredCurrent = (current.officialObjects ?? []).filter(
-        (obj) => !removedSet.has(obj._id ?? obj.id ?? "")
-      );
-      const newObjectsMap = new Map(
-        patch.officialObjects.map((obj) => [obj._id ?? obj.id ?? "", obj])
-      );
-      const merged = [...filteredCurrent];
-      for (const newObj of newObjectsMap.values()) {
-        const id = newObj._id ?? newObj.id ?? "";
-        const existingIndex = merged.findIndex((obj) => (obj._id ?? obj.id ?? "") === id);
-        if (existingIndex >= 0) {
-          merged[existingIndex] = newObj;
-        } else {
-          merged.push(newObj);
-        }
-      }
-      mergedOfficialObjects = merged;
-    } else {
-      mergedOfficialObjects = patch.officialObjects;
-    }
-  } else if (isOfficialMergeMode && removedOfficialObjectIds && removedOfficialObjectIds.length > 0) {
-    const removedSet = new Set(removedOfficialObjectIds);
-    mergedOfficialObjects = (current.officialObjects ?? []).filter(
-      (obj) => !removedSet.has(obj._id ?? obj.id ?? "")
-    );
-  }
-
-  return {
-    ...current,
-    ...patch,
-    sources: has("sources") ? (patch.sources ?? []) : current.sources,
-    minerals: has("minerals") ? (patch.minerals ?? []) : current.minerals,
-    structures: has("structures") ? (patch.structures ?? []) : current.structures,
-    creeps: has("creeps") ? (patch.creeps ?? []) : current.creeps,
-    objects: mergedObjects,
-    officialObjects: mergedOfficialObjects,
-    officialUsers: has("officialUsers") ? patch.officialUsers : current.officialUsers,
-  };
-}
-
 export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -212,6 +123,8 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
   const [roomInput, setRoomInput] = useState(normalizedName);
   const [shardInput, setShardInput] = useState(normalizedShard ?? "");
   const [liveSnapshot, setLiveSnapshot] = useState<RoomDetailSnapshot | undefined>(undefined);
+  const liveSnapshotRef = useRef<RoomDetailSnapshot | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState<RoomIntelTab | "map" | "manage">("map");
   const { shards: serverShards } = useServerShards(session);
 
   const swrKey =
@@ -219,13 +132,13 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
       ? ["room-detail", session.baseUrl, session.token, normalizedName, normalizedShard ?? ""]
       : null;
 
-  const { data, error, isLoading, mutate } = useSWR(
+  const { data, error, isLoading, isValidating, mutate } = useSWR(
     swrKey,
     () => {
       if (!session) {
         throw new Error("Session unavailable.");
       }
-      return fetchRoomDetailSnapshot(session, normalizedName, normalizedShard);
+      return fetchRoomDetailSnapshot(session, normalizedName, normalizedShard, { requireObjects: Boolean(session.token.trim()) });
     },
     {
       refreshInterval: normalizedName ? 30_000 : 0,
@@ -242,6 +155,7 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
 
   useEffect(() => {
     setLiveSnapshot(undefined);
+    liveSnapshotRef.current = undefined;
     lastRealtimeMutateAt.current = 0;
   }, [normalizedName, normalizedShard, session?.baseUrl, session?.token]);
 
@@ -250,6 +164,7 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
       return;
     }
     setLiveSnapshot(data);
+    liveSnapshotRef.current = data;
   }, [data]);
 
   useEffect(() => {
@@ -270,16 +185,14 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
         return;
       }
 
-      const patch = extractRoomDetailRealtimePatch(normalizedName, normalizedShard, event.payload);
-      if (patch) {
-        setLiveSnapshot((current) => {
-          const base = current ?? data;
-          if (!base) {
-            return current;
-          }
-          return mergeRoomDetailSnapshot(base, patch);
-        });
-        return;
+      const base = liveSnapshotRef.current;
+      if (base) {
+        const merged = mergeRoomDetailEvent(base, event.payload);
+        if (merged) {
+          liveSnapshotRef.current = merged;
+          setLiveSnapshot(merged);
+          return;
+        }
       }
 
       const now = Date.now();
@@ -301,7 +214,7 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
       }
       realtimeClient.disconnect();
     };
-  }, [data, mutate, normalizedName, normalizedShard, realtimeChannels, session]);
+  }, [mutate, normalizedName, normalizedShard, realtimeChannels, session]);
 
   const snapshot = liveSnapshot ?? data;
   const roomObjects = snapshot?.objects ?? [];
@@ -319,7 +232,7 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
 
   const navigateToRoom = useCallback(() => {
       const nextRoomName = roomInput.trim().toUpperCase();
-      if (!nextRoomName) {
+      if (!/^[WE]\d+[NS]\d+$/.test(nextRoomName)) {
         return false;
       }
 
@@ -368,6 +281,7 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
       }`}
     >
       <header className="dashboard-header">
+        <Link className="ghost-button" to="/rooms">← {t("intel.back")}</Link>
         <form className="room-detail-nav-form" onSubmit={handleNavigateRoom}>
           <input
             className="room-detail-nav-input"
@@ -399,6 +313,7 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
             {t("rooms.openDetail")}
           </button>
         </form>
+        <button className="ghost-button" type="button" disabled={isValidating} onClick={() => void mutate()}>{t("common.refreshNow")}</button>
       </header>
 
       {!session ? (
@@ -412,7 +327,7 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
         </article>
       ) : null}
 
-      {error && !data ? (
+      {error ? (
         <p className="error-text">
           {error instanceof Error ? error.message : t("common.unknownError")}
         </p>
@@ -426,19 +341,28 @@ export function RoomDetailPanel({ roomName, roomShard }: RoomDetailPanelProps) {
       ) : null}
 
       {session && snapshot ? (
-        <div className="room-detail-map-wrap">
-          <RoomGameplayMap
-            encoded={snapshot.terrainEncoded}
-            roomName={roomLabel}
-            roomShard={shardLabel}
-            gameTime={snapshot.gameTime}
-            roomObjects={roomObjects}
-            officialObjects={snapshot.officialObjects}
-            officialUsers={snapshot.officialUsers}
-            currentUsername={session.username}
-            currentUserId={session.userId}
-          />
-        </div>
+        <>
+          <div className="room-detail-meta"><strong>{roomLabel}</strong><span>{shardLabel ?? t("map.shardDefault")}</span><span>RCL {snapshot.controllerLevel ?? "—"}</span><span>{snapshot.owner ?? "—"}</span><span>{t("common.lastFetch")}: {new Date(snapshot.fetchedAt).toLocaleTimeString()}</span>{snapshot.gameTime !== undefined ? <span>Tick {snapshot.gameTime.toLocaleString()}</span> : null}</div>
+          <div className="room-intel-tabs" role="tablist" aria-label={t("rooms.detailTitle")}>
+            <button role="tab" aria-selected={activeTab === "map"} onClick={() => setActiveTab("map")}>{t("intel.detailMap")}</button>
+            {(["overview", "resources", "buildings", "units", "manage"] as const).map((tab) => <button key={tab} role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)}>{t(`intel.tab.${tab}`)}</button>)}
+          </div>
+          {activeTab === "map" ? <div className="room-detail-map-wrap">
+            <RoomGameplayMap
+              encoded={snapshot.terrainEncoded}
+              roomName={roomLabel}
+              roomShard={shardLabel}
+              gameTime={snapshot.gameTime}
+              roomObjects={roomObjects}
+              officialObjects={snapshot.officialObjects}
+              officialUsers={snapshot.officialUsers}
+              currentUsername={session.username}
+              currentUserId={session.userId}
+            />
+          </div> : <div className="room-detail-data-panel" role="tabpanel">
+            {activeTab === "manage" ? <RoomOperations session={session} snapshots={error || isValidating ? [] : [snapshot]} onComplete={() => void mutate()} /> : <RoomIntelligence key={activeTab} entries={[{ snapshot, stale: Boolean(error) }]} tab={activeTab} player={session} />}
+          </div>}
+        </>
       ) : null}
     </section>
   );

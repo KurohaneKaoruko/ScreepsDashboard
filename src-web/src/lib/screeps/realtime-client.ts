@@ -1,4 +1,5 @@
 import { normalizeBaseUrl } from "./request";
+import { resolveWebTransportUrl } from "../runtime/web-transport";
 
 export type RealtimeConnectionState = "idle" | "connecting" | "connected" | "closed";
 
@@ -257,13 +258,6 @@ async function readSocketDataAsText(data: unknown): Promise<string | null> {
 export function buildScreepsSocketUrl(baseUrl: string, token?: string): string {
   const normalizedBase = normalizeBaseUrl(baseUrl);
   const url = new URL(normalizedBase);
-  const host = url.hostname.trim().toLowerCase();
-  const isLoopbackHost =
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host === "::1" ||
-    host === "[::1]";
-  url.protocol = isLoopbackHost ? "ws:" : "wss:";
   url.pathname = normalizeWebSocketPath(url.pathname);
 
   const trimmedToken = token?.trim();
@@ -271,7 +265,9 @@ export function buildScreepsSocketUrl(baseUrl: string, token?: string): string {
     url.searchParams.set("_token", trimmedToken);
   }
 
-  return url.toString();
+  const transport = new URL(resolveWebTransportUrl(url.toString()));
+  transport.protocol = transport.protocol === "https:" ? "wss:" : "ws:";
+  return transport.toString();
 }
 
 export class ScreepsRealtimeClient {

@@ -4574,20 +4574,24 @@ a {
 
   .shell-nav {
     position: fixed;
-    top: calc(46px + env(safe-area-inset-top, 0px));
+    top: var(--app-topbar-height, calc(46px + env(safe-area-inset-top, 0px)));
     left: 0;
     bottom: 0;
+    height: calc(100dvh - var(--app-topbar-height, 46px));
+    overflow-y: auto;
     z-index: 42;
     width: min(82vw, 280px);
     padding: 10px 8px calc(10px + env(safe-area-inset-bottom, 0px));
     border-right: 1px solid var(--border);
     background: rgba(5, 5, 5, 0.98);
     transform: translateX(-110%);
+    visibility: hidden;
     transition: transform 0.18s ease;
     pointer-events: none;
   }
 
   .mobile-nav-open .shell-nav {
+    visibility: visible;
     transform: translateX(0);
     pointer-events: auto;
     box-shadow: 12px 0 20px rgba(0, 0, 0, 0.5);
@@ -4611,7 +4615,7 @@ a {
     position: fixed;
     left: 0;
     right: 0;
-    top: calc(46px + env(safe-area-inset-top, 0px));
+    top: var(--app-topbar-height, calc(46px + env(safe-area-inset-top, 0px)));
     bottom: 0;
     z-index: 36;
     border: 0;

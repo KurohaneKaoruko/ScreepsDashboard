@@ -33,3 +33,7 @@ target
 # Android gradle build caches
 .gradle/
 src-tauri/gen/android/**/build/
+
+# Browser test reports (contexts and credentials are never committed)
+playwright-report/
+test-results/

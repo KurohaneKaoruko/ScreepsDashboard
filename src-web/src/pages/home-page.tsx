@@ -17,7 +17,7 @@ export function HomePage() {
     }
 
     navigate(
-      session ? (session.token.trim() ? "/user" : "/rooms") : "/login",
+      session ? "/rooms" : "/login",
       { replace: true }
     );
   }, [hasHydrated, navigate, session]);

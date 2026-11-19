@@ -1,0 +1,12 @@
+{
+  "name": "Screeps Dashboard",
+  "short_name": "Screeps",
+  "description": "Multi-room Screeps monitoring and management dashboard",
+  "id": "./",
+  "start_url": "./#/rooms",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080c14",
+  "theme_color": "#080c14",
+  "icons": [{ "src": "./app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

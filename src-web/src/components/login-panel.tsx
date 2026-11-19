@@ -350,7 +350,7 @@ export function LoginPanel() {
         serverId: resolvedServerId,
         accountId: resolvedAccountId,
       });
-      navigate("/user", { replace: true });
+      navigate("/rooms", { replace: true });
 
       void probeSupportedEndpoints(
         baseUrl,

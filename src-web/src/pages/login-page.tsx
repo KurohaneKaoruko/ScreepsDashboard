@@ -28,7 +28,7 @@ export function LoginPage() {
     }
 
     if (session) {
-      navigate(session.token.trim() ? "/user" : "/rooms", { replace: true });
+      navigate("/rooms", { replace: true });
     }
   }, [hasHydrated, navigate, session]);
 

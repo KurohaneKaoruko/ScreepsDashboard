@@ -1,5 +1,7 @@
 import { screepsBatchRequest, screepsRequest } from "./request";
 import { getTerrainFromCache, setTerrainToCache } from "./terrain-cache";
+import { normalizeShardName } from "./shards";
+import { extractObjectStore } from "./object-store";
 import type {
   OfficialRoomObjectRecord,
   OfficialRoomUserRecord,
@@ -16,7 +18,6 @@ import type {
 
 const ROOM_NAME_PATTERN = /^[WE]\d+[NS]\d+$/;
 const ROOM_NAME_EXTRACT_PATTERN = /[WE]\d+[NS]\d+/i;
-const SHARD_PATTERN = /^shard\d+$/i;
 
 const STRUCTURE_TYPES = new Set([
   "constructedWall",
@@ -397,12 +398,7 @@ function normalizeRoomCandidate(value: unknown): string | undefined {
 }
 
 function normalizeShard(value: string | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  return SHARD_PATTERN.test(normalized) ? normalized : undefined;
+  return normalizeShardName(value);
 }
 
 function extractRecordRoomName(record: Record<string, unknown>): string | undefined {
@@ -617,7 +613,7 @@ function collectObjectRecordsFromValue(
     return;
   }
 
-  for (const nested of Object.values(record)) {
+  for (const [key, nested] of Object.entries(record)) {
     const nestedRecord = asRecord(nested);
     if (!nestedRecord) {
       continue;
@@ -626,7 +622,7 @@ function collectObjectRecordsFromValue(
     const nestedX = asNumber(nestedRecord.x);
     const nestedY = asNumber(nestedRecord.y);
     if (nestedX !== undefined && nestedY !== undefined) {
-      sink.push(nestedRecord);
+      sink.push(firstString([nestedRecord._id, nestedRecord.id]) ? nestedRecord : { ...nestedRecord, _id: key });
     }
   }
 }
@@ -780,6 +776,71 @@ export function extractOfficialRendererUsers(
   return undefined;
 }
 
+function mergeObjectFields(previous: Record<string, unknown>, changes: Record<string, unknown>): Record<string, unknown> {
+  const output = { ...previous };
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === null) delete output[key];
+    else if (value !== undefined) {
+      const nested = asRecord(value);
+      output[key] = nested ? mergeObjectFields(asRecord(output[key]) ?? {}, nested) : value;
+    }
+  }
+  return output;
+}
+
+/** Socket maps are field deltas, while arrays represent full object snapshots. */
+export function mergeRoomDetailEvent(current: RoomDetailSnapshot, payload: unknown): RoomDetailSnapshot | null {
+  const root = asRecord(payload);
+  if (!root) return null;
+  const envelope = asRecord(root.data) ?? asRecord(root.result) ?? root;
+  const incoming = root.objects ?? root.roomObjects ?? envelope.objects ?? envelope.roomObjects;
+  const gameTime = resolveGameTime([payload]);
+  const users = extractOfficialRendererUsers(payload);
+  const removals = [
+    ...collectStringArray(root.removedObjectIds ?? root.removed ?? root.deleted ?? envelope.removedObjectIds),
+    ...collectStringArray(root.removedOfficialObjectIds ?? root.removedOfficial ?? root.deletedOfficial),
+  ];
+  if (incoming === undefined && gameTime === undefined && !users && !removals.length) return null;
+  const mode = firstString([root.updateMode, root.mode, root.objectUpdateMode]);
+  const replacing = mode === "replace" || (Array.isArray(incoming) && mode !== "merge");
+  const raw = new Map<string, OfficialRoomObjectRecord>();
+  if (!replacing) {
+    for (const object of current.officialObjects ?? current.objects.map((object) => ({ ...object, _id: object.id, room: current.roomName }))) {
+      const id = firstString([object._id, object.id]);
+      if (id) raw.set(id, object);
+    }
+  }
+  const records: Array<[string, unknown]> = Array.isArray(incoming)
+    ? incoming.flatMap((item) => {
+      const value = asRecord(item);
+      const id = value ? firstString([value._id, value.id]) : undefined;
+      return id ? [[id, value] as [string, unknown]] : [];
+    }) : Object.entries(asRecord(incoming) ?? {});
+  for (const [key, value] of records) {
+    if (value === null) { raw.delete(key); continue; }
+    const record = asRecord(value);
+    if (!record) continue;
+    const id = firstString([record._id, record.id]) ?? key;
+    raw.set(id, { ...mergeObjectFields(raw.get(id) ?? {}, record), _id: id });
+  }
+  for (const id of removals) raw.delete(id);
+  const officialObjects = [...raw.values()];
+  const officialUsers = { ...current.officialUsers, ...users };
+  const parsed = parseRoomObjectEntities(current.roomName, current.shard, [{
+    objects: officialObjects, users: officialUsers, gameTime: gameTime ?? current.gameTime,
+  }]);
+  return {
+    ...current,
+    ...parsed,
+    owner: parsed.owner ?? current.owner,
+    controllerLevel: parsed.controllerLevel ?? current.controllerLevel,
+    energyAvailable: parsed.energyAvailable ?? current.energyAvailable,
+    energyCapacity: parsed.energyCapacity ?? current.energyCapacity,
+    gameTime: gameTime ?? current.gameTime,
+    fetchedAt: new Date().toISOString(), officialObjects, officialUsers,
+  };
+}
+
 export function extractRoomDetailRealtimePatch(
   roomInput: string,
   shardInput: string | undefined,
@@ -880,6 +941,7 @@ function resolveObjectType(record: Record<string, unknown>): string | undefined 
   if (resourceType === "energy" && firstNumber([record.amount, record.energy]) !== undefined) {
     return "energy";
   }
+  if (resourceType && firstNumber([record.amount, record.resourceAmount]) !== undefined) return "resource";
 
   if (
     firstString([record.name, record.creepName]) &&
@@ -898,13 +960,14 @@ function buildObjectSummaryFromRecord(
   x: number,
   y: number,
   resolvedOwner: string | undefined,
-  resolvedName: string | undefined
+  resolvedName: string | undefined,
+  gameTime?: number
 ): RoomObjectSummary {
   const controllerRecord = asRecord(record.controller);
-  const store = toNumericRecord(record.store);
+  const store = extractObjectStore(record);
   const storeCapacity = parseStoreCapacity(record.storeCapacity);
   const storeCapacityResource = toNumericRecord(record.storeCapacityResource);
-  const energy = firstNumber([record.energy, store?.energy]);
+  const energy = firstNumber([store?.energy, record.energy]);
   const objectEnergyCapacity = firstNumber([
     record.energyCapacity,
     storeCapacityResource?.energy,
@@ -922,7 +985,9 @@ function buildObjectSummaryFromRecord(
     user: firstString([record.user, record.userId, asRecord(record.owner)?.user]),
     hits: asNumber(record.hits),
     hitsMax: asNumber(record.hitsMax),
-    ttl: firstNumber([record.ticksToLive, record.ttl]),
+    ttl: firstNumber([record.ticksToLive, record.ttl]) ??
+      (gameTime !== undefined && asNumber(record.ageTime) !== undefined
+        ? Math.max(0, asNumber(record.ageTime)! - gameTime) : undefined),
     store,
     storeCapacity,
     storeCapacityResource,
@@ -948,6 +1013,16 @@ function buildObjectSummaryFromRecord(
     actionLog: parseActionLog(record.actionLog ?? record.actions),
     userId: firstString([record.userId, asRecord(record.owner)?.user, record.user]),
     effects: parseEffects(record.effects),
+    role: firstString([record.role, asRecord(record.memory)?.role]),
+    structureType: firstString([record.structureType]),
+    resourceType: firstString([record.resourceType, record.resource]),
+    amount: firstNumber([record.amount, record.resourceAmount]),
+    mineralAmount: asNumber(record.mineralAmount),
+    ticksToRegeneration: asNumber(record.ticksToRegeneration),
+    ticksToDowngrade: asNumber(record.ticksToDowngrade),
+    downgradeTime: asNumber(record.downgradeTime),
+    cooldown: asNumber(record.cooldown),
+    isActive: asBoolean(record.isActive ?? record.active),
   };
 }
 
@@ -984,6 +1059,7 @@ function resolveGameTime(payloads: unknown[]): number | undefined {
 }
 
 function parseFallbackEntities(roomName: string, payloads: unknown[]): ParsedEntities {
+  const gameTime = resolveGameTime(payloads);
   const records: Record<string, unknown>[] = [];
   for (const payload of payloads) {
     flattenRecords(payload, 0, records);
@@ -1035,7 +1111,8 @@ function parseFallbackEntities(roomName: string, payloads: unknown[]): ParsedEnt
       x,
       y,
       resolvedOwner,
-      resolvedName
+      resolvedName,
+      gameTime
     );
     objectMap.set(`${objectId}:${type}:${x}:${y}`, objectSummary);
 
@@ -1044,7 +1121,7 @@ function parseFallbackEntities(roomName: string, payloads: unknown[]): ParsedEnt
       continue;
     }
 
-    if (type === "mineral" || firstString([record.mineralType])) {
+    if (type === "mineral") {
       mineralMap.set(`${x}:${y}`, {
         x,
         y,
@@ -1091,7 +1168,7 @@ function parseFallbackEntities(roomName: string, payloads: unknown[]): ParsedEnt
         const storeCapacity = asRecord(record.storeCapacity) ?? {};
         const storeCapacityResource = asRecord(record.storeCapacityResource) ?? {};
 
-        const used = firstNumber([record.energy, store.energy]);
+        const used = firstNumber([store.energy, record.energy]);
         const capacity = firstNumber([
           record.energyCapacity,
           storeCapacityResource.energy,
@@ -1123,12 +1200,13 @@ function parseFallbackEntities(roomName: string, payloads: unknown[]): ParsedEnt
   };
 }
 
-function parseRoomObjectEntities(
+export function parseRoomObjectEntities(
   roomName: string,
   shardHint: string | undefined,
   payloads: unknown[]
 ): ParsedEntities {
   const userDirectory = buildUserDirectory(payloads);
+  const gameTime = resolveGameTime(payloads);
 
   const sourceMap = new Map<string, RoomSourceSummary>();
   const mineralMap = new Map<string, RoomMineralSummary>();
@@ -1169,7 +1247,8 @@ function parseRoomObjectEntities(
       }
 
       const objectId =
-        firstString([record._id, record.id]) ?? `${type}:${x}:${y}:${objectMap.size + 1}`;
+        firstString([record._id, record.id]) ?? `${type}:${x}:${y}`;
+      if (objectMap.has(`${objectId}:${type}:${x}:${y}`)) continue;
       const resolvedOwner = resolveOwnerName(record, userDirectory);
       const resolvedName = firstString([record.name, record.creepName]);
       const objectSummary = buildObjectSummaryFromRecord(
@@ -1179,7 +1258,8 @@ function parseRoomObjectEntities(
         x,
         y,
         resolvedOwner,
-        resolvedName
+        resolvedName,
+        gameTime
       );
       objectMap.set(`${objectId}:${type}:${x}:${y}`, objectSummary);
 
@@ -1188,7 +1268,7 @@ function parseRoomObjectEntities(
         continue;
       }
 
-      if (type === "mineral" || firstString([record.mineralType])) {
+      if (type === "mineral") {
         mineralMap.set(`${x}:${y}`, {
           x,
           y,
@@ -1234,7 +1314,7 @@ function parseRoomObjectEntities(
           const storeCapacity = asRecord(record.storeCapacity) ?? {};
           const storeCapacityResource = asRecord(record.storeCapacityResource) ?? {};
 
-          const used = firstNumber([record.energy, store.energy]);
+          const used = firstNumber([store.energy, record.energy]);
           const capacity = firstNumber([
             record.energyCapacity,
             storeCapacityResource.energy,
@@ -1361,6 +1441,7 @@ function buildTerrainQueries(roomName: string, shard?: string): QueryParams[] {
 
   if (shard) {
     queries.push({ room: roomName, encoded: 1, shard });
+    return queries;
   }
   queries.push({ room: roomName, encoded: 1 });
   if (!shard || shard !== "shard0") {
@@ -1559,6 +1640,7 @@ function buildRoomObjectsRequests(
       method: "POST",
       body: { room: roomName, shard },
     });
+    return requests;
   }
 
   requests.push({
@@ -1596,17 +1678,14 @@ async function tryRoomObjects(
   shard?: string
 ): Promise<unknown> {
   const requests = buildRoomObjectsRequests(roomName, shard);
-  const responses = await requestCandidates(baseUrl, token, username, requests, 6);
-
-  for (const response of responses) {
-    if (!response.ok) {
+  for (const candidate of requests) {
+    const response = await screepsRequest({ ...candidate, baseUrl, token, username });
+    const root = asRecord(response.data);
+    if (!response.ok || root?.ok === 0 || root?.error) {
+      if ([401, 403, 429].includes(response.status)) return undefined;
       continue;
     }
-
-    const records = extractRoomObjectRecords(response.data);
-    if (records.length > 0) {
-      return response.data;
-    }
+    if (extractRoomObjectRecords(response.data).length > 0 || Array.isArray(root?.objects) || asRecord(root?.objects)) return response.data;
   }
 
   return undefined;
@@ -1636,13 +1715,14 @@ async function tryUserRooms(session: ScreepsSession): Promise<unknown> {
 export async function fetchRoomDetailSnapshot(
   session: ScreepsSession,
   roomInput: string,
-  shardInput?: string
+  shardInput?: string,
+  options?: { includeTerrain?: boolean; requireObjects?: boolean }
 ): Promise<RoomDetailSnapshot> {
   const roomName = normalizeRoomName(roomInput);
   const shard = normalizeShard(shardInput);
 
   const [terrainPayload, roomObjectsPayload] = await Promise.all([
-    tryTerrain(session.baseUrl, session.token, session.username, roomName, shard),
+    options?.includeTerrain === false ? undefined : tryTerrain(session.baseUrl, session.token, session.username, roomName, shard),
     tryRoomObjects(session.baseUrl, session.token, session.username, roomName, shard),
   ]);
   const officialObjects = extractOfficialRendererObjects(roomObjectsPayload);
@@ -1652,7 +1732,10 @@ export async function fetchRoomDetailSnapshot(
   let mapStatsPayload: unknown;
   let overviewPayload: unknown;
   let roomsPayload: unknown;
-  const shouldFetchFallback = parsedRoomObjects.objects.length === 0 && officialObjects.length === 0;
+  const shouldFetchFallback = !options?.requireObjects && parsedRoomObjects.objects.length === 0 && officialObjects.length === 0;
+  if (options?.requireObjects && !roomObjectsPayload) {
+    throw new Error("Room objects unavailable. Check room visibility, shard, and token permissions.");
+  }
   if (shouldFetchFallback) {
     [mapStatsPayload, overviewPayload, roomsPayload] = await Promise.all([
       tryMapStats(session.baseUrl, session.token, session.username, roomName, shard),

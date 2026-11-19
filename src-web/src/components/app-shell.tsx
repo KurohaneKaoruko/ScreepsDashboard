@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { MouseEvent, ReactNode } from "react";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../lib/i18n/use-i18n";
 import { isDesktopWindowFrameAvailable } from "../lib/runtime/platform";
 import { useAuthStore } from "../stores/auth-store";
@@ -17,17 +17,21 @@ export function AppShell({ children }: AppShellProps) {
   const session = useAuthStore((state) => state.session);
   const clearSession = useAuthStore((state) => state.clearSession);
   const navigate = useNavigate();
-  const [desktopWindowFrame, setDesktopWindowFrame] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
-  useEffect(() => {
-    setDesktopWindowFrame(isDesktopWindowFrameAvailable());
-  }, []);
+  const location = useLocation();
+  const [desktopWindowFrame] = useState(isDesktopWindowFrameAvailable);
+  const [mobileNavLocation, setMobileNavLocation] = useState<string | null>(null);
+  const mobileNavOpen = mobileNavLocation === location.key;
+  const [mobileLayout, setMobileLayout] = useState(() => window.matchMedia("(max-width: 980px)").matches);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const navToggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function handleWindowResize() {
+      setMobileLayout(window.innerWidth <= 980);
       if (window.innerWidth > 980) {
-        setMobileNavOpen(false);
+        setMobileNavLocation(null);
       }
     }
 
@@ -38,18 +42,48 @@ export function AppShell({ children }: AppShellProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const measure = () => shellRef.current?.style.setProperty("--app-topbar-height", `${header.getBoundingClientRect().height}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!mobileLayout || !mobileNavOpen) return;
+    navRef.current?.querySelector<HTMLElement>("a, button, input")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileNavLocation(null);
+        navToggleRef.current?.focus();
+      }
+      if (event.key === "Tab") {
+        const items = Array.from(navRef.current?.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input:not(:disabled)") ?? []);
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileLayout, mobileNavOpen]);
+
   function handleSignOut() {
-    setMobileNavOpen(false);
+    setMobileNavLocation(null);
     clearSession();
     navigate("/login", { replace: true });
   }
 
   function closeMobileNav() {
-    setMobileNavOpen(false);
+    setMobileNavLocation(null);
   }
 
   function toggleMobileNav() {
-    setMobileNavOpen((current) => !current);
+    setMobileNavLocation((current) => current === location.key ? null : location.key);
   }
 
   function handleTopbarMouseDown(event: MouseEvent<HTMLElement>) {
@@ -74,13 +108,15 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
-    <div className={mobileNavOpen ? "app-shell mobile-nav-open" : "app-shell"}>
+    <div ref={shellRef} className={mobileNavOpen ? "app-shell mobile-nav-open" : "app-shell"}>
       <header
+        ref={headerRef}
         className="app-topbar"
         data-tauri-drag-region={desktopWindowFrame ? "" : undefined}
         onMouseDown={handleTopbarMouseDown}
       >
         <button
+          ref={navToggleRef}
           className="nav-drawer-toggle topbar-no-drag"
           type="button"
           aria-label={t("nav.aria")}
@@ -128,10 +164,10 @@ export function AppShell({ children }: AppShellProps) {
       />
 
       <div className="shell-body">
-        <aside className="shell-nav" id="mobile-nav-drawer">
+        <aside ref={navRef} className="shell-nav" id="mobile-nav-drawer" inert={mobileLayout && !mobileNavOpen}>
           <AppNav onNavigate={closeMobileNav} />
         </aside>
-        <main className="shell-content">{children}</main>
+        <main className="shell-content" inert={mobileLayout && mobileNavOpen}>{children}</main>
       </div>
     </div>
   );

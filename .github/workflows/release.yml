@@ -9,13 +9,19 @@ jobs:
   verify-version:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    outputs:
+      release_name: ${{ steps.release_meta.outputs.release_name }}
+      release_body: ${{ steps.release_meta.outputs.release_body }}
+      prerelease: ${{ steps.release_meta.outputs.prerelease }}
     steps:
       - name: Log trigger context
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          echo "event=${{ github.event_name }}"
-          echo "ref=${{ github.ref }}"
-          echo "ref_type=${{ github.ref_type }}"
-          echo "ref_name=${{ github.ref_name }}"
+          echo "event=$GITHUB_EVENT_NAME"
+          echo "ref=$GITHUB_REF"
+          echo "ref_type=$GITHUB_REF_TYPE"
+          echo "ref_name=$RELEASE_TAG"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,12 +38,97 @@ jobs:
           node-version: 22
 
       - name: Verify tag and project version match
-        run: node scripts/release/verify-tag-version.mjs ${{ github.ref_name }}
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/release/verify-tag-version.mjs "$RELEASE_TAG"
+
+      - name: Resolve release metadata
+        id: release_meta
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          DEFAULT_TITLE="Screeps Dashboard ${TAG}"
+          DEFAULT_BODY="Automated release for ${TAG}."
+          TAG_TYPE="$(git for-each-ref --format='%(objecttype)' "refs/tags/${TAG}")"
+
+          if [ "$TAG_TYPE" = "tag" ]; then
+            TAG_SUBJECT="$(git for-each-ref --format='%(contents:subject)' "refs/tags/${TAG}")"
+            TAG_BODY="$(git for-each-ref --format='%(contents:body)' "refs/tags/${TAG}")"
+          else
+            TAG_SUBJECT=""
+            TAG_BODY=""
+          fi
+
+          RELEASE_TITLE="${TAG_SUBJECT:-$DEFAULT_TITLE}"
+          RELEASE_BODY="$DEFAULT_BODY"
+          if [ -n "${TAG_BODY//[[:space:]]/}" ]; then
+            RELEASE_BODY="$TAG_BODY"
+          fi
+
+          IS_PRERELEASE=false
+          if [[ "$VERSION" == *-* ]]; then
+            IS_PRERELEASE=true
+          fi
+
+          DELIMITER="$(openssl rand -hex 16)"
+          {
+            echo "release_name<<$DELIMITER"
+            echo "$RELEASE_TITLE"
+            echo "$DELIMITER"
+            echo "release_body<<$DELIMITER"
+            echo "$RELEASE_BODY"
+            echo "$DELIMITER"
+            echo "prerelease=$IS_PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+
+  publish_web:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Build Web app
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm build:web
+
+      - name: Package Web app and gateway
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          BUNDLE="ScreepsDashboard-${TAG#v}-web"
+          mkdir -p "dist/web/$BUNDLE/src-web" "dist/web/$BUNDLE/scripts/web"
+          cp -R src-web/dist "dist/web/$BUNDLE/src-web/"
+          cp scripts/web/serve.mjs scripts/web/gateway.mjs "dist/web/$BUNDLE/scripts/web/"
+          cp README.md README.en.md LICENSE "dist/web/$BUNDLE/"
+          tar -C dist/web -czf "dist/web/$BUNDLE.tar.gz" "$BUNDLE"
+
+      - name: Publish Web bundle to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ needs.verify-version.outputs.release_name }}
+          body: ${{ needs.verify-version.outputs.release_body }}
+          prerelease: ${{ needs.verify-version.outputs.prerelease }}
+          files: dist/web/*.tar.gz
+          fail_on_unmatched_files: true
 
   publish_desktop:
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - verify-version
+      - publish_web
     permissions:
       contents: write
     strategy:
@@ -102,57 +193,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Resolve release metadata
-        id: release_meta
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-          DEFAULT_TITLE="Screeps Dashboard ${TAG}"
-          DEFAULT_BODY="Automated release for ${TAG}."
-          TAG_TYPE="$(git for-each-ref --format='%(objecttype)' "refs/tags/${TAG}" | head -n1)"
-
-          if [ "$TAG_TYPE" = "tag" ]; then
-            TAG_SUBJECT="$(git for-each-ref --format='%(contents:subject)' "refs/tags/${TAG}" | head -n1)"
-            TAG_BODY="$(git for-each-ref --format='%(contents:body)' "refs/tags/${TAG}")"
-          else
-            TAG_SUBJECT=""
-            TAG_BODY=""
-          fi
-
-          RELEASE_TITLE="${TAG_SUBJECT:-$DEFAULT_TITLE}"
-          if [ -n "${TAG_BODY//[[:space:]]/}" ]; then
-            RELEASE_BODY="$TAG_BODY"
-          else
-            RELEASE_BODY="$DEFAULT_BODY"
-          fi
-
-          if [[ "$VERSION" == *-* ]]; then
-            IS_PRERELEASE=true
-          else
-            IS_PRERELEASE=false
-          fi
-
-          {
-            echo "release_name<<EOF"
-            echo "$RELEASE_TITLE"
-            echo "EOF"
-            echo "release_body<<EOF"
-            echo "$RELEASE_BODY"
-            echo "EOF"
-            echo "prerelease=$IS_PRERELEASE"
-          } >> "$GITHUB_OUTPUT"
-
       - name: Build and publish installers
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: ${{ steps.release_meta.outputs.release_name }}
-          releaseBody: ${{ steps.release_meta.outputs.release_body }}
-          prerelease: ${{ steps.release_meta.outputs.prerelease }}
+          releaseName: ${{ needs.verify-version.outputs.release_name }}
+          releaseBody: ${{ needs.verify-version.outputs.release_body }}
+          prerelease: ${{ needs.verify-version.outputs.prerelease }}
           releaseDraft: false
           args: ${{ matrix.args }}
 

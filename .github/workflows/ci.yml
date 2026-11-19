@@ -46,8 +46,17 @@ jobs:
       - name: Typecheck frontend
         run: pnpm run typecheck:web
 
+      - name: Test Web gateway and room data
+        run: pnpm test
+
       - name: Build frontend export
         run: pnpm run build
+
+      - name: Install browser for Web tests
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Test multi-room Web workflows
+        run: pnpm test:e2e
 
       - name: Check Rust formatting
         run: pnpm run rust:fmt:check

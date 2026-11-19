@@ -10,6 +10,7 @@
  * matter how many rooms the map shows.
  */
 import { SCREEPS_RENDERER_RESOURCE_MAP } from "../lib/screeps/renderer-resource-map";
+import { resolveWebTransportUrl } from "../lib/runtime/web-transport";
 import type { OfficialRoomObjectRecord, OfficialRoomUserRecord } from "../lib/screeps/types";
 import {
   GRID_SIZE,
@@ -61,12 +62,13 @@ const FALLBACK_BADGE_URL =
     '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"></svg>'
   );
 
-/** Builds the badge URL template a Screeps server exposes for a username. */export function buildRoomPreviewBadgeUrl(baseUrl: string | undefined): string {
+/** Builds the badge URL template a Screeps server exposes for a username. */
+export function buildRoomPreviewBadgeUrl(baseUrl: string | undefined): string {
   const trimmed = baseUrl?.trim().replace(/\/+$/, "");
   if (!trimmed) {
     return FALLBACK_BADGE_URL;
   }
-  return `${trimmed}/api/user/badge-svg?username=%1`;
+  return resolveWebTransportUrl(`${trimmed}/api/user/badge-svg?username=BADGE_USERNAME`).replace("BADGE_USERNAME", "%1");
 }
 
 let activeBadgeUrl = FALLBACK_BADGE_URL;

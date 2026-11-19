@@ -67,7 +67,7 @@ function normalizeCachedRooms(value: unknown): RoomSummary[] {
     if (!room) {
       continue;
     }
-    roomByName.set(room.name, room);
+    roomByName.set(`${room.shard ?? "unknown"}:${room.name}`, room);
   }
 
   return [...roomByName.values()].sort((left, right) => left.name.localeCompare(right.name));
